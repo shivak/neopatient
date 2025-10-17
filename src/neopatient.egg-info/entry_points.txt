@@ -1,0 +1,2 @@
+[console_scripts]
+neopatient = neopatient.cli:main

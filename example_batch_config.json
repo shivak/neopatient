@@ -1,0 +1,19 @@
+[
+  {
+    "count": 5,
+    "positive": "Patients with diabetes mellitus type 2",
+    "negative": "Patients without any metabolic disorders",
+    "seeds": [42, 123, 456, 789, 101112]
+  },
+  {
+    "count": 3,
+    "positive": "Patients with hypertension",
+    "negative": "Patients with normal blood pressure",
+    "seeds": [999, 888, 777]
+  },
+  {
+    "count": 2,
+    "positive": "Patients with chronic kidney disease",
+    "negative": "Patients with normal kidney function"
+  }
+]
