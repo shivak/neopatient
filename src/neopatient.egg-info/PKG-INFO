@@ -3,7 +3,7 @@ Name: neopatient
 Version: 0.1.0
 Summary: Language-controlled generation of artificial patient records
 Author-email: Shiva Kaul <shiva.kaul@gmail.com>
-License: MIT
+License: Apache-2.0
 Requires-Python: >=3.8
 Description-Content-Type: text/markdown
 Requires-Dist: duckdb>=0.10.0

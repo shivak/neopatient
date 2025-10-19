@@ -64,7 +64,7 @@ def main():
                 verifier=args.verifier
             )
             logger.info("Patient record generated")
-            print(json.dumps(record, indent=2))
+            print(json.dumps(record, indent=2, default=str))
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
@@ -111,7 +111,7 @@ def main():
                 if args.state_file:
                     logger.info("Saving state...")
                     with open(args.state_file, 'w') as f:
-                        json.dump(result, f, indent=2)
+                        json.dump(result, f, indent=2, default=str)
                     print(f"Batch generation in progress. State saved to {args.state_file}")
                     print(f"Current stage: {result['stage']}")
                     if result.get("generation_tickets"):
@@ -124,7 +124,7 @@ def main():
             else:
                 # Final results
                 logger.info("Batch generation completed")
-                print(json.dumps(result, indent=2))
+                print(json.dumps(result, indent=2, default=str))
                 
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
