@@ -3,6 +3,7 @@ from sentence_transformers import SentenceTransformer
 import chromadb
 from chromadb.config import Settings
 from chromadb.utils.batch_utils import create_batches
+from typing import cast
 
 import os
 
@@ -27,7 +28,7 @@ def setup_databases(parquet_path: str, chroma_db_path: str = "clinprime_chroma")
         "SELECT DISTINCT code_system FROM read_parquet($parquet_path)",
         params={"parquet_path": parquet_path},
     ).fetchall()
-    coding_systems = [row[0] for row in coding_systems]
+    coding_systems = [cast(str, row[0]) for row in coding_systems]
 
     model = SentenceTransformer("abhinand/MedEmbed-large-v0.1")
 
@@ -35,7 +36,6 @@ def setup_databases(parquet_path: str, chroma_db_path: str = "clinprime_chroma")
     settings = Settings(anonymized_telemetry=False)
     client = chromadb.PersistentClient(path=chroma_db_path, settings=settings)
 
-    print(coding_systems)
     for system in coding_systems:
         # Delete existing collection if it exists
         try:
@@ -49,19 +49,20 @@ def setup_databases(parquet_path: str, chroma_db_path: str = "clinprime_chroma")
             metadata={"hnsw:space": "cosine"},  # Use cosine similarity
         )
 
-        sub_data = con.query(
+        rows = con.query(
             "SELECT med_code, t.desc FROM read_parquet($parquet_path) AS t WHERE code_system = $system",
             params={"parquet_path": parquet_path, "system": system},
-        ).to_df()
+        ).fetchall()
 
-        descs = sub_data["desc"].apply(lambda x: x[:256] if x else "").tolist()
+        med_codes = [cast(str, row[0]) for row in rows]
+        descs = [cast(str, row[1])[:256] if row[1] else "" for row in rows]
         embeddings = model.encode(descs, normalize_embeddings=True)
 
         # Prepare data for ChromaDB
-        ids = [f"{system}_{i}" for i in range(len(sub_data))]
+        ids = [f"{system}_{i}" for i in range(len(rows))]
         metadatas = [
-            {"med_code": str(sub_data.loc[i, "med_code"]), "desc": descs[i]}
-            for i in range(len(sub_data))
+            {"med_code": med_code, "desc": desc}
+            for med_code, desc in zip(med_codes, descs)
         ]
 
         # Add documents to collection in batches
@@ -86,7 +87,7 @@ def setup_databases(parquet_path: str, chroma_db_path: str = "clinprime_chroma")
 
 def load_chroma_client(
     chroma_db_path: str = "clinprime_chroma",
-) -> chromadb.PersistentClient:
+) -> chromadb.ClientAPI:
     """
     Load a ChromaDB client for the specified database path.
 

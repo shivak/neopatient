@@ -30,7 +30,7 @@ VERIFICATION_TEMPLATE = load_template(_verify_template_path)
 def generate_synthetic_patient_record(
     positive: str,
     negative: str,
-    chroma_client: chromadb.PersistentClient,
+    chroma_client: chromadb.ClientAPI,
     seed: int | None = None,
     generator: str = "gpt-4o",
     verifier: str = "gpt-4o",
@@ -63,7 +63,7 @@ def generate_synthetic_patient_record(
         messages=[{"role": "user", "content": prompt}],
         response_format=PatientRecord,
         #        seed=seed,
-        temperature=0.7 if seed is None else 0.0,
+        temperature=0.7,
     )
     record = response.choices[0].message.parsed.model_dump()
 
@@ -457,7 +457,7 @@ def _parse_verification_results(
 
 
 def _match_codes(
-    all_cohort_records: List[List[Dict]], chroma_client: chromadb.PersistentClient
+    all_cohort_records: List[List[Dict]], chroma_client: chromadb.ClientAPI
 ) -> List[List[Dict]]:
     """Apply code matching to all records across all cohorts using true batch processing."""
     # Collect all measurements from all records that need matching
