@@ -71,7 +71,7 @@ class PatientRecord(BaseModel):
 
 
 # For MEDS generation
-GenerationRecord = List[tuple[int, Union[str, None], str, Union[float, None], Union[str, None]]]
+GenerationRecord = List[tuple[Union[str, None], str, Union[float, None], Union[str, None]]]
 
 # Import meds.DataSchema
 from meds.schema import DataSchema

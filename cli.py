@@ -3,6 +3,7 @@ import json
 import logging
 import sys
 from neopatient import generate_synthetic_patient_record, generate_synthetic_patient_records_batch, setup_databases, load_chroma_client
+from neopatient.sampler import sample_individual_patients
 
 def main():
     parser = argparse.ArgumentParser(description="Neopatient CLI for generating synthetic patient records")
@@ -27,6 +28,7 @@ def main():
     parser.add_argument("--parquet_path", help="Path to clinprime_mapping.parquet file for setup")
     parser.add_argument("--generator", default="gpt-5-nano", help="Model name for generation")
     parser.add_argument("--verifier", default="gpt-5", help="Model name for verification")
+    parser.add_argument("--sampler", default="gpt-5", help="Model name for sampling")
     
     args = parser.parse_args()
     
@@ -54,10 +56,20 @@ def main():
             sys.exit(1)
         
         try:
+            logger.info("Sampling individual patient...")
+            sampled = sample_individual_patients(
+                positive=args.positive,
+                negative=args.negative,
+                n=1,
+                sampler_model=args.sampler
+            )
+            patient_id, individual_description = next(iter(sampled.items()))
             logger.info("Generating patient record...")
             record = generate_synthetic_patient_record(
                 positive=args.positive,
                 negative=args.negative,
+                individual_description=individual_description,
+                patient_id=patient_id,
                 chroma_client=chroma_client,
                 seed=args.seed,
                 generator=args.generator,
@@ -102,7 +114,8 @@ def main():
                 epsilon=args.epsilon,
                 state=state,
                 generator=args.generator,
-                verifier=args.verifier
+                verifier=args.verifier,
+                sampler=args.sampler
             )
             
             # Check if result is state (needs resuming) or final results

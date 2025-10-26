@@ -1,23 +1,21 @@
-Generate a longitudinal record for a synthetic patient drawn from the following cohort: {{positive_cohort}}
+Generate a longitudinal record for this specific synthetic patient: {{individual_description}}
 
-* your output should be a JSON array of tuples: [[subject_id, time, code_desc, numeric_value, text_value], ...]
-* subject_id: unique patient identifier (integer)
+* your output should be a JSON array of tuples: [[time, code_desc, numeric_value, text_value], ...]
 * time: ISO timestamp to minute precision (e.g., "2000-05-15T14:20") or null for static measurements
 * code_desc: brief textual description of the measurement/event (not the code itself)
 * numeric_value: numeric result if applicable, else null
 * text_value: text result or unit if applicable, else null
 * include static measurements for gender, race, and ethnicity
 * begin the trajectory on their birthday with birth-related descriptions
-* percentages of the cohort should be interpreted as probabilities for this individual
 * this is an outpatient record, and should have on the order of 80 events from 3 visits. I **INSIST** on you generating a full-length record -- yes, it will be long.
 
 --- example output ---
 
 [
-  [123, null, "Gender (Female)", null, null],
-  [123, null, "Race (White)", null, null],
-  [123, "2000-05-15T14:20", "Birth finding", null, null],
-  [123, "2025-10-05T09:30", "Platelets [#/volume] in Blood", 4500.0, "/uL"],
-  [123, "2025-10-05T09:30", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
-  [123, "2025-10-05T09:30", "Essential (primary) hypertension", null, null]
+  [null, "Gender (Female)", null, null],
+  [null, "Race (White)", null, null],
+  ["2000-05-15T14:20", "Birth finding", null, null],
+  ["2025-10-05T09:30", "Platelets [#/volume] in Blood", 4500.0, "/uL"],
+  ["2025-10-05T09:30", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
+  ["2025-10-05T09:30", "Essential (primary) hypertension", null, null]
 ]

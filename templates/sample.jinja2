@@ -1,0 +1,14 @@
+Generate {{n}} individual patient descriptions that satisfy the following positive cohort description: "{{positive_cohort}}"
+
+Each description must also explicitly specify what the individual should NOT be like, based on the negative cohort description: "{{negative_cohort}}"
+
+* Each description should be self-contained, including demographics, conditions, and any relevant details.
+* Assign unique patient IDs. By default, these should be random-looking (not sequential) but heed the cohort descriptions about what the IDs should be.
+* Output as JSON object: {(patient id): "description1", (another patient id): "description2", ...}
+
+--- example output ---
+
+{
+  532114084: "A 45-year-old female with hypertension but not diabetes, Caucasian, outpatient visits every 6 months.",
+  381018197: "A 30-year-old male with asthma but not allergies, African American, emergency visits annually."
+}

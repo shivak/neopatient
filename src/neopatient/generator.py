@@ -10,6 +10,7 @@ import pyarrow as pa
 from sentence_transformers import SentenceTransformer
 from .matcher import batch_find_best_matching_codes
 from .models import PatientRecord, GenerationRecord
+from .sampler import sample_individual_patients
 from meds.schema import DataSchema
 
 
@@ -34,47 +35,59 @@ VERIFICATION_TEMPLATE = load_template(_verify_template_path)
 def generate_synthetic_patient_record(
     positive: str,
     negative: str,
+    individual_description: str,
+    patient_id: int,
     chroma_client: chromadb.ClientAPI,
     seed: int | None = None,
     generator: str = "gpt-4o",
     verifier: str = "gpt-4o",
 ) -> pa.Table:
     """
-    Generates a synthetic longitudinal patient record based on positive and negative descriptions.
+    Generates a synthetic longitudinal patient record for an individual patient.
+
+    First, generates events based on the individual description.
+    Then, matches codes using ChromaDB.
+    Finally, verifies the record satisfies the cohort-level positive and negative descriptions.
 
     Args:
-        positive: Positive cohort description
-        negative: Negative anti-cohort description
-        chroma_client: The ChromaDB client
+        positive: Positive cohort description for verification
+        negative: Negative cohort description for verification
+        individual_description: Self-contained description of the individual patient
+        patient_id: Unique patient identifier (generated during sampling)
+        chroma_client: The ChromaDB client for code matching
         seed: Optional seed for reproducibility
         generator: Model name for generation (default: "gpt-4o")
         verifier: Model name for verification (default: "gpt-4o")
 
     Returns:
-        Generated patient record JSON
+        Generated patient record as MEDS DataSchema table
 
     Raises:
-        ValueError: If the generated record does not satisfy the criteria
+        ValueError: If the generated record does not satisfy the cohort criteria
     """
     client = openai.OpenAI()  # Assume API key is set via environment
 
     print(f"Generating record using: {generator}")
 
-    # Step 1: Generate tuples with LLM using structured output
-    prompt = GENERATION_TEMPLATE.render(positive_cohort=positive)
-    response = client.beta.chat.completions.parse(
+    # Step 1: Generate tuples with LLM
+    prompt = GENERATION_TEMPLATE.render(individual_description=individual_description)
+    response = client.chat.completions.create(
         model=generator,
         messages=[{"role": "user", "content": prompt}],
-        response_format=GenerationRecord,
+        response_format={"type": "json_object"},
         #        seed=seed,
         temperature=0.7,
     )
-    record = response.choices[0].message.parsed
+    content = response.choices[0].message.content
+    if content is None:
+        raise ValueError("LLM response content is None")
+    record_data = json.loads(content)
+    record = record_data  # list of tuples
 
     # Step 2: Match codes and create DataSchema
-    record = _match_codes([record], chroma_client)
+    record = _match_codes([record], [patient_id], chroma_client)
 
-    # Step 3: Verify with LLM
+    # Step 3: Verify the record satisfies cohort-level positive and negative descriptions (cohort-level, but description includes negatives)
     record_tsv = record.to_pandas().to_csv(sep="\t", index=False)
     ver_prompt = VERIFICATION_TEMPLATE.render(
         record_tsv=record_tsv, positive=positive, negative=negative
@@ -104,25 +117,33 @@ def generate_synthetic_patient_records_batch(
     state: Dict[str, Any] | None = None,
     generator: str = "gpt-5",
     verifier: str = "gpt-5-nano",
+    sampler: str = "gpt-4o",
 ) -> Union[List[List[Dict]], Dict[str, Any]]:
     """
     Generates synthetic patient records in batch using OpenAI's batch API.
+
+    Process:
+    1. Sample individual patient descriptions for each cohort.
+    2. Generate longitudinal records for each individual.
+    3. Match codes using ChromaDB.
+    4. Verify records satisfy cohort-level criteria.
+    5. Return satisfactory records.
 
     Args:
         cohort_specs: List of cohort specifications, each containing:
             - count: Number of patients to generate for this cohort
             - positive: Positive cohort description
             - negative: Negative (anti-cohort) description
-            - seeds: Optional list of seeds (length should match count)
-        chroma_client: The ChromaDB client
-        epsilon: Over-generation factor (1 + epsilon) to account for failed verifications
+        chroma_client: The ChromaDB client for code matching
+        epsilon: Over-generation factor (deprecated, now exact count from sampling)
         state: Optional state to resume from a previous batch operation
         generator: Model name for generation (default: "gpt-4o")
         verifier: Model name for verification (default: "gpt-4o")
+        sampler: Model name for sampling (default: "gpt-4o")
 
     Returns:
         Either:
-        - List of lists of generated patient records (one list per cohort)
+        - List of lists of generated patient records (one list per cohort, each record is list of event dicts)
         - State dictionary for resuming if batch is not ready yet
     """
     client = openai.OpenAI()
@@ -133,12 +154,14 @@ def generate_synthetic_patient_records_batch(
     else:
         # Initialize new state
         current_state = {
-            "stage": "generation",
+            "stage": "sampling",
             "cohort_specs": cohort_specs,
             "chroma_client": chroma_client,
             "epsilon": epsilon,
             "generator": generator,
             "verifier": verifier,
+            "sampler": sampler,
+            "sampled_patients": [],
             "generation_tickets": [],
             "generated_records": [],
             "verification_tickets": [],
@@ -146,8 +169,12 @@ def generate_synthetic_patient_records_batch(
             "completed_cohorts": [],
         }
 
-    # Stage 1: Generate records using batch API
-    if current_state["stage"] == "generation":
+    # Stage 1: Sample individual patients
+    if current_state["stage"] == "sampling":
+        return _handle_sampling_stage(client, current_state)
+
+    # Stage 2: Generate records using batch API
+    elif current_state["stage"] == "generation":
         return _handle_generation_stage(client, current_state)
 
     # Stage 2: Check generation results and apply code matching
@@ -170,6 +197,26 @@ def generate_synthetic_patient_records_batch(
         raise ValueError(f"Unknown stage: {current_state['stage']}")
 
 
+def _handle_sampling_stage(
+    client: openai.OpenAI, state: Dict[str, Any]
+) -> Union[List[List[Dict]], Dict[str, Any]]:
+    """Sample individual patient descriptions for each cohort using the sampler LLM."""
+    if state["sampled_patients"]:
+        # Already sampled, move to generation
+        state["stage"] = "generation"
+        return _handle_generation_stage(client, state)
+
+    # Sample for each cohort
+    for spec in state["cohort_specs"]:
+        sampled = sample_individual_patients(
+            spec["positive"], spec["negative"], spec["count"], state["sampler"]
+        )
+        state["sampled_patients"].append(sampled)
+
+    state["stage"] = "generation"
+    return _handle_generation_stage(client, state)
+
+
 def _handle_generation_stage(
     client: openai.OpenAI, state: Dict[str, Any]
 ) -> Union[List[List[Dict]], Dict[str, Any]]:
@@ -181,35 +228,24 @@ def _handle_generation_stage(
 
     # Prepare batch requests
     batch_requests = []
-    request_id = 0
 
-    for cohort_idx, spec in enumerate(state["cohort_specs"]):
-        count = spec["count"]
-        positive = spec["positive"]
-        seeds = spec.get("seeds", [None] * count)
-
-        # Over-generate by epsilon factor
-        target_count = int(count * (1 + state["epsilon"]))
-
-        for i in range(target_count):
-            seed = seeds[i] if i < len(seeds) else None
-            prompt = GENERATION_TEMPLATE.render(positive_cohort=positive)
+    for cohort_idx, sampled in enumerate(state["sampled_patients"]):
+        for patient_id, desc in sampled.items():
+            prompt = GENERATION_TEMPLATE.render(individual_description=desc)
 
             batch_requests.append(
                 {
-                    "custom_id": f"cohort_{cohort_idx}_patient_{i}",
+                    "custom_id": f"cohort_{cohort_idx}_patient_{patient_id}",
                     "method": "POST",
                     "url": "/v1/chat/completions",
                     "body": {
                         "model": state.get("generator", state.get("generation_model")),
                         "messages": [{"role": "user", "content": prompt}],
                         "response_format": {"type": "json_object"},
-                        #                    "seed": seed,
                         "temperature": 1.0,
                     },
                 }
             )
-            request_id += 1
 
     # Submit batch request
     try:
@@ -243,8 +279,8 @@ def _handle_check_generation_stage(
             results = _download_batch_results(client, batch_output)
 
             # Parse generation results
-            state["generated_records"] = _parse_generation_results(
-                results, state["cohort_specs"]
+            state["generated_records"], state["patient_ids"] = _parse_generation_results(
+                results, state["sampled_patients"]
             )
 
             # Move to matching stage
@@ -417,8 +453,8 @@ def _download_batch_results(client: openai.OpenAI, file_id: str) -> List[Dict]:
 
 
 def _parse_generation_results(
-    results: List[Dict], cohort_specs: List[Dict]
-) -> List[List[Dict]]:
+    results: List[Dict], sampled_patients: List[Dict[int, str]]
+) -> tuple[List[List[GenerationRecord]], List[List[int]]]:
     """Parse generation results and organize by cohort."""
     cohort_records = [[] for _ in cohort_specs]
 
@@ -461,9 +497,9 @@ def _parse_verification_results(
 
 
 def _match_codes(
-    cohort_records: List[GenerationRecord], chroma_client: ClientAPI
+    cohort_records: List[GenerationRecord], patient_ids: List[int], chroma_client: ClientAPI
 ) -> pa.Table:
-    """Apply code matching to cohort records and return DataSchema."""
+    """Match code descriptions to standardized codes using ChromaDB and return MEDS DataSchema table."""
     if not cohort_records:
         empty_df = pd.DataFrame(
             columns=["subject_id", "time", "code", "numeric_value", "text_value"]
@@ -474,7 +510,7 @@ def _match_codes(
     all_descriptions = []
     for record in cohort_records:
         for row in record:
-            all_descriptions.append(row[2])  # code_desc
+            all_descriptions.append(row[1])  # code_desc is now index 1
 
     # Assume default system 'lnc' for matching
     systems = ["lnc"] * len(all_descriptions)
@@ -487,15 +523,15 @@ def _match_codes(
     # Build rows for DataSchema
     rows = []
     idx = 0
-    for record in cohort_records:
+    for record, patient_id in zip(cohort_records, patient_ids):
         for row in record:
-            subject_id, time, code_desc, numeric_value, text_value = row
+            time, code_desc, numeric_value, text_value = row
             matched_code, matched_desc = batch_results[idx]
             code = matched_code if matched_code else code_desc  # fallback to desc
             text_value = matched_desc[:128] if matched_desc else text_value
             rows.append(
                 {
-                    "subject_id": subject_id,
+                    "subject_id": patient_id,
                     "time": time,
                     "code": code,
                     "numeric_value": numeric_value,
