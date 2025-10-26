@@ -1,66 +1,23 @@
 Generate a longitudinal record for a synthetic patient drawn from the following cohort: {{positive_cohort}}
 
-* your output should be in JSON, which is described below
-* codes take the form of "VOCABULARY_NAME/CODE_TEXT" where the code comes from a standard vocabulary with an OHDSI-defined vocabulary name. For example, represent the ICD10CM code I50.9 as "ICD10CM/I50.9"
+* your output should be a JSON array of tuples: [[subject_id, time, code_desc, numeric_value, text_value], ...]
+* subject_id: unique patient identifier (integer)
+* time: ISO timestamp to minute precision (e.g., "2000-05-15T14:20") or null for static measurements
+* code_desc: brief textual description of the measurement/event (not the code itself)
+* numeric_value: numeric result if applicable, else null
+* text_value: text result or unit if applicable, else null
 * include static measurements for gender, race, and ethnicity
-* begin the trajectory on their birthday with the SNOMED codes for birth
+* begin the trajectory on their birthday with birth-related descriptions
 * percentages of the cohort should be interpreted as probabilities for this individual
 * this is an outpatient record, and should have on the order of 80 events from 3 visits. I **INSIST** on you generating a full-length record -- yes, it will be long.
-* just elide fields when they are null
 
---- example/description of output format --- 
+--- example output ---
 
-Match the following JSON format. The "measurements" key is badly named - it just refers to a list of all codes recorded during that event, whether or not they actually involved numerical measurements.
-
-{
-    "patient_id": 123456789,
-    "static_measurements": [
-      {
-        "code_system": "lnc",
-        "code_desc": "Gender (Female)"
-      },
-      {
-        "code_system": "lnc",
-        "code_desc": "Race (White)"
-      }
-    ],
-    "events": [
-      {
-        "time": "2000-05-15T14:20:00.000000Z",
-        "measurements": [
-          {
-            "code_system": "snomed",
-            "code_desc": "Birth finding"
-          }
-        ]
-      },
-      {
-        "time": "2025-10-05T09:30:00.000000Z",
-        "measurements": [
-          {
-            "code_system": "lnc",
-            "code_desc": "Platelets [#/volume] in Blood",
-            "result_num": 4500.0,
-            "unit": "/uL"
-          },
-          {
-            "code_system": "lnc",
-            "code_desc": "Hemoglobin [Mass/volume] in Blood",
-            "result_num": 13.5,
-            "unit": "g/dL"
-          },
-          {
-            "code_system": "icd10",
-            "code_desc": "Essential (primary) hypertension"
-          }
-        ]
-      },
-      ...
-    ]
-}
-
-* time: time at which each measurement in this event occurs
-* code_system: in [snomed, rxnorm, icd9_proc, phecode, lnc, icd10_proc, cpt, atc, icd9, umls_cui, ndc, icd10]
-* code_desc: brief textual description of the code/measurement/event (not the code itself)
-* result_num: any numeric result associated with this measurement (e.g., the laboratory test result)
-* unit: units of the numerical measurement, if appropriate (e.g. mg/dL, /HPF, cm H2O, mU/L, pmol/L, Sec., mm Hg, lbs)
+[
+  [123, null, "Gender (Female)", null, null],
+  [123, null, "Race (White)", null, null],
+  [123, "2000-05-15T14:20", "Birth finding", null, null],
+  [123, "2025-10-05T09:30", "Platelets [#/volume] in Blood", 4500.0, "/uL"],
+  [123, "2025-10-05T09:30", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
+  [123, "2025-10-05T09:30", "Essential (primary) hypertension", null, null]
+]

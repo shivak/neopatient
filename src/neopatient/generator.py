@@ -4,9 +4,13 @@ from typing import Dict, List, Union, Any
 import openai
 import jinja2
 import chromadb
+from chromadb.api import ClientAPI
+import pandas as pd
+import pyarrow as pa
 from sentence_transformers import SentenceTransformer
 from .matcher import batch_find_best_matching_codes
-from .models import PatientRecord
+from .models import PatientRecord, GenerationRecord
+from meds.schema import DataSchema
 
 
 # Load Jinja2 template from file
@@ -34,7 +38,7 @@ def generate_synthetic_patient_record(
     seed: int | None = None,
     generator: str = "gpt-4o",
     verifier: str = "gpt-4o",
-) -> Dict:
+) -> pa.Table:
     """
     Generates a synthetic longitudinal patient record based on positive and negative descriptions.
 
@@ -56,24 +60,24 @@ def generate_synthetic_patient_record(
 
     print(f"Generating record using: {generator}")
 
-    # Step 1: Generate JSON with LLM using structured output
+    # Step 1: Generate tuples with LLM using structured output
     prompt = GENERATION_TEMPLATE.render(positive_cohort=positive)
     response = client.beta.chat.completions.parse(
         model=generator,
         messages=[{"role": "user", "content": prompt}],
-        response_format=PatientRecord,
+        response_format=GenerationRecord,
         #        seed=seed,
         temperature=0.7,
     )
-    record = response.choices[0].message.parsed.model_dump()
+    record = response.choices[0].message.parsed
 
-    # Step 2: Match codes and update descriptions using batch processing
-    record = _match_codes([[record]], chroma_client)[0][0]
+    # Step 2: Match codes and create DataSchema
+    record = _match_codes([record], chroma_client)
 
     # Step 3: Verify with LLM
-    record_str = json.dumps(record, indent=2, default=str)
+    record_tsv = record.to_pandas().to_csv(sep="\t", index=False)
     ver_prompt = VERIFICATION_TEMPLATE.render(
-        record_json=record_str, positive=positive, negative=negative
+        record_tsv=record_tsv, positive=positive, negative=negative
     )
     ver_response = client.chat.completions.create(
         model=verifier,
@@ -457,58 +461,48 @@ def _parse_verification_results(
 
 
 def _match_codes(
-    all_cohort_records: List[List[Dict]], chroma_client: chromadb.ClientAPI
-) -> List[List[Dict]]:
-    """Apply code matching to all records across all cohorts using true batch processing."""
-    # Collect all measurements from all records that need matching
-    all_measurements = []
-    measurement_locations = []  # Track where each measurement came from
-
-    # Process each cohort and record
-    for cohort_idx, cohort_records in enumerate(all_cohort_records):
-        for record_idx, record in enumerate(cohort_records):
-            print(record)
-            # Collect static measurements
-            for meas_idx, meas in enumerate(record["static_measurements"]):
-                all_measurements.append((meas["code_system"].value, meas["code_desc"]))
-                measurement_locations.append(
-                    (cohort_idx, record_idx, "static", meas_idx)
-                )
-
-            # Collect event measurements
-            for event_idx, event in enumerate(record["events"]):
-                for meas_idx, meas in enumerate(event["measurements"]):
-                    all_measurements.append(
-                        (meas["code_system"].value, meas["code_desc"])
-                    )
-                    measurement_locations.append(
-                        (cohort_idx, record_idx, "event", event_idx, meas_idx)
-                    )
-
-    # Perform batch matching if we have measurements to process
-    if all_measurements:
-        model = SentenceTransformer("abhinand/MedEmbed-large-v0.1")
-        batch_results = batch_find_best_matching_codes(
-            all_measurements, chroma_client, model
+    cohort_records: List[GenerationRecord], chroma_client: ClientAPI
+) -> pa.Table:
+    """Apply code matching to cohort records and return DataSchema."""
+    if not cohort_records:
+        empty_df = pd.DataFrame(
+            columns=["subject_id", "time", "code", "numeric_value", "text_value"]
         )
+        return pa.Table.from_pandas(empty_df, schema=DataSchema.schema)
 
-        # Apply results back to the records
-        for (code, proper_desc), location in zip(batch_results, measurement_locations):
-            if code:  # Only update if we found a match
-                cohort_idx, record_idx = location[0], location[1]
-                record = all_cohort_records[cohort_idx][record_idx]
+    # Collect all descriptions to match
+    all_descriptions = []
+    for record in cohort_records:
+        for row in record:
+            all_descriptions.append(row[2])  # code_desc
 
-                if location[2] == "static":
-                    _, _, _, meas_idx = location
-                    record["static_measurements"][meas_idx]["code"] = code
-                    record["static_measurements"][meas_idx]["code_desc"] = proper_desc[
-                        :128
-                    ]
-                elif location[2] == "event":
-                    _, _, _, event_idx, meas_idx = location
-                    record["events"][event_idx]["measurements"][meas_idx]["code"] = code
-                    record["events"][event_idx]["measurements"][meas_idx][
-                        "code_desc"
-                    ] = proper_desc[:128]
+    # Assume default system 'lnc' for matching
+    systems = ["lnc"] * len(all_descriptions)
+    queries = list(zip(systems, all_descriptions))
 
-    return all_cohort_records
+    # Perform batch matching
+    model = SentenceTransformer("abhinand/MedEmbed-large-v0.1")
+    batch_results = batch_find_best_matching_codes(queries, chroma_client, model)
+
+    # Build rows for DataSchema
+    rows = []
+    idx = 0
+    for record in cohort_records:
+        for row in record:
+            subject_id, time, code_desc, numeric_value, text_value = row
+            matched_code, matched_desc = batch_results[idx]
+            code = matched_code if matched_code else code_desc  # fallback to desc
+            text_value = matched_desc[:128] if matched_desc else text_value
+            rows.append(
+                {
+                    "subject_id": subject_id,
+                    "time": time,
+                    "code": code,
+                    "numeric_value": numeric_value,
+                    "text_value": text_value,
+                }
+            )
+            idx += 1
+
+    df = pd.DataFrame(rows)
+    return pa.Table.from_pandas(df, schema=DataSchema.schema)

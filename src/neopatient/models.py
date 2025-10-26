@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Union
 from datetime import datetime
 from enum import Enum
 
@@ -68,3 +68,10 @@ class PatientRecord(BaseModel):
     events: List[MedicalEvent] = Field(
         description="List of medical events with their associated measurements"
     )
+
+
+# For MEDS generation
+GenerationRecord = List[tuple[int, Union[str, None], str, Union[float, None], Union[str, None]]]
+
+# Import meds.DataSchema
+from meds.schema import DataSchema
