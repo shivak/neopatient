@@ -551,8 +551,7 @@ def _match_codes(
     for record, patient_id in zip(cohort_records, patient_ids):
         for row in record:
             time, code_system, code_desc, numeric_value, text_value = row
-            matched_code, matched_desc = batch_results[idx]
-            code = matched_code if matched_code else code_desc  # fallback to desc
+            code, matched_desc = batch_results[idx]
             text_value = matched_desc[:128] if matched_desc else text_value
             rows.append(
                 {
