@@ -2,6 +2,7 @@ import json
 import os
 import random
 import string
+import sys
 from typing import Dict, List, Union, Any
 import pathlib
 import openai
@@ -339,7 +340,7 @@ def _handle_matching_stage(
 
 def _start_verification_stage(
     client: openai.OpenAI, state: State
-) -> Union[List[List[Dict]], State]:
+) -> Union[List[Cohort], State]:
     """Start verification stage using batch API."""
     # Prepare verification requests
     batch_requests = []
@@ -430,15 +431,15 @@ def _handle_finalize_stage(state: State) -> List[Cohort]:
     ):
         spec = state["cohort_specs"][cohort_idx]
         target_count = spec["count"]
-        satisfactory_records = []
-
-        for record, verification in zip(cohort_records, cohort_verifications):
-            if verification.satisfactory:
-                # Records already have code matching applied
-                satisfactory_records.append(record)
-
-        if satisfactory_records:
-            final_results.append(satisfactory_records)
+        satisfactory_records = [
+            record for record, verification in zip(cohort_records, cohort_verifications)
+            if verification.satisfactory
+        ]
+        capped_records = satisfactory_records[:target_count]
+        if capped_records:
+            final_results.append(capped_records)
+        if len(satisfactory_records) < target_count:
+            print(f"Warning: Cohort {cohort_idx} has only {len(satisfactory_records)} satisfactory records, expected {target_count}", file=sys.stderr)
 
     return final_results
 
