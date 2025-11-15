@@ -1,29 +1,26 @@
- import argparse
- import json
- import logging
- import pathlib
- import sys
- from neopatient import generate_synthetic_patient_record
- from neopatient.sampler import sample_individual_patients
+import argparse
+import json
+import logging
+import pathlib
+import sys
+from neopatient import generate_synthetic_patient_record
 
 def main():
     parser = argparse.ArgumentParser(description="Neopatient CLI for generating synthetic patient records")
-    
 
-    
+
     # Arguments
     parser.add_argument("--positive", help="Positive cohort description")
     parser.add_argument("--negative", help="Negative (anti-cohort) description")
     parser.add_argument("--seed", type=int, default=None, help="Seed for reproducibility")
-    
+
     # Common arguments
     parser.add_argument("--chroma_db_path", default=None, help="Path to ChromaDB database directory, or None to download from Hugging Face")
     parser.add_argument("--generator", default="gpt-5-nano", help="Model name for generation")
     parser.add_argument("--verifier", default="gpt-5", help="Model name for verification")
-    parser.add_argument("--sampler", default="gpt-5", help="Model name for sampling")
-    
+
     args = parser.parse_args()
-    
+
     # Configure logging
     logging.basicConfig(
         level=logging.INFO,
@@ -40,20 +37,11 @@ def main():
         sys.exit(1)
 
     try:
-        logger.info("Sampling individual patient...")
-        sampled = sample_individual_patients(
-            positive=args.positive,
-            negative=args.negative,
-            n=1,
-            sampler_model=args.sampler
-        )
-        patient_id, individual_description = next(iter(sampled.items()))
         logger.info("Generating patient record...")
         record = generate_synthetic_patient_record(
             positive=args.positive,
             negative=args.negative,
-            individual_description=individual_description,
-            patient_id=patient_id,
+            patient_id=1,
             chroma_db=chroma_db,
             seed=args.seed,
             generator=args.generator,

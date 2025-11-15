@@ -53,7 +53,6 @@ def _resolve_chroma_client(chroma_db: Union[chromadb.ClientAPI, pathlib.Path, No
 def generate_synthetic_patient_record(
     positive: str,
     negative: str,
-    individual_description: str,
     patient_id: int,
     chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None],
     seed: int | None = None,
@@ -63,15 +62,14 @@ def generate_synthetic_patient_record(
     """
     Generates a synthetic longitudinal patient record for an individual patient.
 
-    First, generates events based on the individual description.
+    First, generates events based on the positive cohort description.
     Then, matches codes using ChromaDB.
     Finally, verifies the record satisfies the cohort-level positive and negative descriptions.
 
     Args:
-        positive: Positive cohort description for verification
+        positive: Positive cohort description used for generation and verification
         negative: Negative cohort description for verification
-        individual_description: Self-contained description of the individual patient
-        patient_id: Unique patient identifier (generated during sampling)
+        patient_id: Unique patient identifier
         chroma_db: The ChromaDB client, path, or None for code matching
         seed: Optional seed for reproducibility
         generator: Model name for generation (default: "gpt-4o")
@@ -89,7 +87,7 @@ def generate_synthetic_patient_record(
     print(f"Generating record using: {generator}")
 
     # Step 1: Generate tuples with LLM
-    prompt = GENERATION_TEMPLATE.render(individual_description=individual_description)
+    prompt = GENERATION_TEMPLATE.render(individual_description=positive)
     response = client.chat.completions.create(
         model=generator,
         messages=[{"role": "user", "content": prompt}],
@@ -101,10 +99,8 @@ def generate_synthetic_patient_record(
     if content is None:
         raise ValueError("LLM response content is None")
     record_data = UncodedPatient.model_validate_json(content)
-    record = record_data.root  # list of Event
-
     # Step 2: Match codes and create DataSchema
-    record = _match_codes([record], [patient_id], chroma_client)
+    record = _match_codes([record_data], [patient_id], chroma_client)
 
     # Step 3: Verify the record satisfies cohort-level positive and negative descriptions (cohort-level, but description includes negatives)
     record_tsv = record.to_pandas().to_csv(sep="\t", index=False)
