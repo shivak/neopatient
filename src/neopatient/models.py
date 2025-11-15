@@ -71,7 +71,13 @@ class PatientRecord(BaseModel):
 
 
 # For MEDS generation
-GenerationRecord = List[tuple[Union[str, None], str, Union[float, None], Union[str, None]]]
+# GenerationRecord: List of tuples where each tuple is (time, code_system, code_desc, numeric_value, text_value)
+# - time: str or None, ISO timestamp or null for static measurements
+# - code_system: CodeSystem, the vocabulary system for this code (non-null)
+# - code_desc: str, brief textual description of the code/measurement/event
+# - numeric_value: float or None, numeric result associated with this measurement
+# - text_value: str or None, text result or unit
+GenerationRecord = List[tuple[Union[str, None], CodeSystem, str, Union[float, None], Union[str, None]]]
 
 # Import meds.DataSchema
 from meds.schema import DataSchema

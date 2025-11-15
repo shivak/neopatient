@@ -1,7 +1,8 @@
 Generate a longitudinal record for this specific synthetic patient: {{individual_description}}
 
-* your output should be a JSON array of tuples: [[time, code_desc, numeric_value, text_value], ...]
+* your output should be a JSON array of tuples: [[time, code_system, code_desc, numeric_value, text_value], ...]
 * time: ISO timestamp to minute precision (e.g., "2000-05-15T14:20") or null for static measurements
+* code_system: the vocabulary system for this code (must be one of: snomed, rxnorm, icd9_proc, phecode, lnc, icd10_proc, cpt, atc, icd9, umls_cui, ndc, icd10)
 * code_desc: brief textual description of the measurement/event (not the code itself)
 * numeric_value: numeric result if applicable, else null
 * text_value: text result or unit if applicable, else null
@@ -12,10 +13,10 @@ Generate a longitudinal record for this specific synthetic patient: {{individual
 --- example output ---
 
 [
-  [null, "Gender (Female)", null, null],
-  [null, "Race (White)", null, null],
-  ["2000-05-15T14:20", "Birth finding", null, null],
-  ["2025-10-05T09:30", "Platelets [#/volume] in Blood", 4500.0, "/uL"],
-  ["2025-10-05T09:30", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
-  ["2025-10-05T09:30", "Essential (primary) hypertension", null, null]
+  [null, "snomed", "Gender (Female)", null, null],
+  [null, "snomed", "Race (White)", null, null],
+  ["2000-05-15T14:20", "snomed", "Birth finding", null, null],
+  ["2025-10-05T09:30", "lnc", "Platelets [#/volume] in Blood", 4500.0, "/uL"],
+  ["2025-10-05T09:30", "lnc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
+  ["2025-10-05T09:30", "icd10", "Essential (primary) hypertension", null, null]
 ]

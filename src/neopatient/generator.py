@@ -539,12 +539,12 @@ def _match_codes(
 
     # Collect all descriptions to match
     all_descriptions = []
+    systems = []
     for record in cohort_records:
         for row in record:
-            all_descriptions.append(row[1])  # code_desc is now index 1
+            systems.append(row[1])  # code_system is index 1
+            all_descriptions.append(row[2])  # code_desc is now index 2
 
-    # Assume default system 'lnc' for matching
-    systems = ["lnc"] * len(all_descriptions)
     queries = list(zip(systems, all_descriptions))
 
     # Perform batch matching
@@ -556,7 +556,7 @@ def _match_codes(
     idx = 0
     for record, patient_id in zip(cohort_records, patient_ids):
         for row in record:
-            time, code_desc, numeric_value, text_value = row
+            time, code_system, code_desc, numeric_value, text_value = row
             matched_code, matched_desc = batch_results[idx]
             code = matched_code if matched_code else code_desc  # fallback to desc
             text_value = matched_desc[:128] if matched_desc else text_value
