@@ -139,7 +139,7 @@ def generate_synthetic_patient_records_batch(
     generator: str = "gpt-5",
     verifier: str = "gpt-5-nano",
     sampler: str = "gpt-4o",
-) -> Union[List[List[Dict]], Dict[str, Any]]:
+) -> Union[List[pa.Table], Dict[str, Any]]:
     """
     Generates synthetic patient records in batch using OpenAI's batch API.
 
@@ -164,7 +164,7 @@ def generate_synthetic_patient_records_batch(
 
     Returns:
         Either:
-        - List of lists of generated patient records (one list per cohort, each record is list of event dicts)
+        - List of MEDS DataSchema tables (one table per cohort)
         - State dictionary for resuming if batch is not ready yet
     """
     chroma_client = _resolve_chroma_client(chroma_db)
@@ -426,7 +426,7 @@ def _handle_check_verification_stage(
         raise RuntimeError(f"Failed to check verification batch status: {e}")
 
 
-def _handle_finalize_stage(state: Dict[str, Any]) -> List[List[Dict]]:
+def _handle_finalize_stage(state: Dict[str, Any]) -> List[pa.Table]:
     """Finalize results by filtering satisfactory records."""
     final_results = []
 
@@ -445,7 +445,9 @@ def _handle_finalize_stage(state: Dict[str, Any]) -> List[List[Dict]]:
                 if len(satisfactory_records) >= target_count:
                     break
 
-        final_results.append(satisfactory_records)
+        df = pd.DataFrame(satisfactory_records)
+        table = pa.Table.from_pandas(df, schema=DataSchema.schema)
+        final_results.append(table)
 
     return final_results
 
