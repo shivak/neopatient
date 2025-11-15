@@ -38,7 +38,7 @@ class UncodedPatient(RootModel[List[Event]]):
 
 
 # Type alias for a single patient's MEDS data table
-Patient = pa.Table
+type Patient = pa.Table
 
 
 class VerificationResponse(BaseModel):
@@ -62,4 +62,4 @@ class State(TypedDict, total=False):
     verified_records: List[List[VerificationResponse]]
     completed_cohorts: List[Any]
     patient_ids: List[List[int]]
-    code_matched_records: List[List[pa.Table]]
+    code_matched_records: List[List[Patient]]

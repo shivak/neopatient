@@ -11,7 +11,7 @@ import pyarrow as pa
 from sentence_transformers import SentenceTransformer
 from huggingface_hub import snapshot_download
 from .matcher import batch_find_best_matching_codes
-from .models import UncodedPatient, VerificationResponse, Event, State
+from .models import UncodedPatient, VerificationResponse, Event, State, Patient
 from .sampler import sample_individual_patients
 from meds.schema import DataSchema
 
@@ -59,7 +59,7 @@ def generate_synthetic_patient_record(
     seed: int | None = None,
     generator: str = "gpt-4o",
     verifier: str = "gpt-4o",
-) -> pa.Table:
+) -> Patient:
     """
     Generates a synthetic longitudinal patient record for an individual patient.
 
@@ -137,7 +137,7 @@ def generate_synthetic_patient_records_batch(
     generator: str = "gpt-5",
     verifier: str = "gpt-5-nano",
     sampler: str = "gpt-4o",
-) -> Union[List[pa.Table], State]:
+) -> Union[List[Patient], State]:
     """
     Generates synthetic patient records in batch using OpenAI's batch API.
 
@@ -422,7 +422,7 @@ def _handle_check_verification_stage(
         raise RuntimeError(f"Failed to check verification batch status: {e}")
 
 
-def _handle_finalize_stage(state: State) -> List[pa.Table]:
+def _handle_finalize_stage(state: State) -> List[Patient]:
     """Finalize results by filtering satisfactory records."""
     final_results = []
 
@@ -523,8 +523,8 @@ def _parse_verification_results(results: List[Dict]) -> List[List[VerificationRe
 
 
 def _match_codes(
-    cohort_records: List[UncodedPatient], patient_ids: List[int], chroma_client: ClientAPI
-) -> pa.Table:
+    cohort_records: List[UncodedPatient], patient_ids: List[int],     chroma_client: ClientAPI
+) -> Patient:
     """Match code descriptions to standardized codes using ChromaDB and return MEDS DataSchema table."""
     if not cohort_records:
         empty_df = pd.DataFrame(
