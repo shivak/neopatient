@@ -12,7 +12,7 @@ _sample_template_path = os.path.join(_project_root, "templates", "sample.jinja2"
 SAMPLE_TEMPLATE = jinja2.Template(open(_sample_template_path, "r", encoding="utf-8").read())
 
 
-def sample_individual_patients(
+def sample_individual_descriptions(
     positive: str,
     negative: str,
     n: int,

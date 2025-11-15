@@ -1,5 +1,7 @@
 import json
 import os
+import random
+import string
 from typing import Dict, List, Union, Any
 import pathlib
 import openai
@@ -11,8 +13,8 @@ import pyarrow as pa
 from sentence_transformers import SentenceTransformer
 from huggingface_hub import snapshot_download
 from .matcher import batch_find_best_matching_codes
-from .models import UncodedPatient, VerificationResponse, Event, State, Patient
-from .sampler import sample_individual_patients
+from .models import UncodedPatient, VerificationResponse, Event, State, Patient, Cohort
+from .sampler import sample_individual_descriptions
 from meds.schema import DataSchema
 
 
@@ -133,7 +135,7 @@ def generate_synthetic_patient_records_batch(
     generator: str = "gpt-5",
     verifier: str = "gpt-5-nano",
     sampler: str = "gpt-4o",
-) -> Union[List[Patient], State]:
+) -> Union[List[Cohort], State]:
     """
     Generates synthetic patient records in batch using OpenAI's batch API.
 
@@ -158,7 +160,7 @@ def generate_synthetic_patient_records_batch(
 
     Returns:
         Either:
-        - List of MEDS DataSchema tables (one table per cohort)
+        - List of cohorts, where each cohort is a list of patient records
         - State dictionary for resuming if batch is not ready yet
     """
     chroma_client = _resolve_chroma_client(chroma_db)
@@ -226,7 +228,7 @@ def _handle_sampling_stage(
 
     # Sample for each cohort
     for spec in state["cohort_specs"]:
-        sampled = sample_individual_patients(
+        sampled = sample_individual_descriptions(
             spec["positive"], spec["negative"], spec["count"], state["sampler"]
         )
         state["sampled_descriptions"].append(sampled)
@@ -250,10 +252,11 @@ def _handle_generation_stage(
     for cohort_idx, sampled in enumerate(state["sampled_descriptions"]):
         for patient_id, desc in sampled.items():
             prompt = GENERATION_TEMPLATE.render(individual_description=desc)
+            salt = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
 
             batch_requests.append(
                 {
-                    "custom_id": f"cohort_{cohort_idx}_patient_{patient_id}",
+                    "custom_id": f"cohort_{cohort_idx}_patient_{patient_id}_{salt}",
                     "method": "POST",
                     "url": "/v1/chat/completions",
                     "body": {
@@ -325,10 +328,10 @@ def _handle_matching_stage(
     chroma_client = _resolve_chroma_client(state["chroma_db"])
     
     # Apply code matching to all generated records
-    state["coded_patients"] = []
+    state["coded_cohorts"] = []
     for cohort_records, cohort_patient_ids in zip(state["generated_records"], state["patient_ids"]):
         matched = _match_codes(cohort_records, cohort_patient_ids, chroma_client)
-        state["coded_patients"].append(matched)
+        state["coded_cohorts"].append(matched)
 
     # Start verification stage
     return _start_verification_stage(client, state)
@@ -341,7 +344,7 @@ def _start_verification_stage(
     # Prepare verification requests
     batch_requests = []
 
-    for cohort_idx, cohort_records in enumerate(state["coded_patients"]):
+    for cohort_idx, cohort_records in enumerate(state["coded_cohorts"]):
         spec = state["cohort_specs"][cohort_idx]
         positive = spec["positive"]
         negative = spec["negative"]
@@ -351,10 +354,11 @@ def _start_verification_stage(
             prompt = VERIFICATION_TEMPLATE.render(
                 record_tsv=record_tsv, positive=positive, negative=negative
             )
+            salt = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
 
             batch_requests.append(
                 {
-                    "custom_id": f"verify_cohort_{cohort_idx}_patient_{record_idx}",
+                    "custom_id": f"verify_cohort_{cohort_idx}_patient_{record_idx}_{salt}",
                     "method": "POST",
                     "url": "/v1/chat/completions",
                     "body": {
@@ -417,12 +421,12 @@ def _handle_check_verification_stage(
         raise RuntimeError(f"Failed to check verification batch status: {e}")
 
 
-def _handle_finalize_stage(state: State) -> List[Patient]:
+def _handle_finalize_stage(state: State) -> List[Cohort]:
     """Finalize results by filtering satisfactory records."""
     final_results = []
 
     for cohort_idx, (cohort_records, cohort_verifications) in enumerate(
-        zip(state["coded_patients"], state["verifications"])
+        zip(state["coded_cohorts"], state["verifications"])
     ):
         spec = state["cohort_specs"][cohort_idx]
         target_count = spec["count"]
@@ -434,8 +438,7 @@ def _handle_finalize_stage(state: State) -> List[Patient]:
                 satisfactory_records.append(record)
 
         if satisfactory_records:
-            table = pa.concat_tables(satisfactory_records)
-            final_results.append(table)
+            final_results.append(satisfactory_records)
 
     return final_results
 
@@ -520,7 +523,7 @@ def _parse_verification_results(results: List[Dict]) -> List[List[VerificationRe
 def _match_codes(
     cohort_records: List[UncodedPatient], patient_ids: List[int], chroma_client: ClientAPI
 ) -> List[Patient]:
-    """Match code descriptions to standardized codes using ChromaDB and return list of MEDS DataSchema tables."""
+    """Match code descriptions to standardized codes using ChromaDB and return list of patient records."""
     if not cohort_records:
         return []
 

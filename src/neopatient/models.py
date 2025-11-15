@@ -40,6 +40,9 @@ class UncodedPatient(RootModel[List[Event]]):
 # Type alias for a single patient's MEDS data table
 type Patient = pa.Table
 
+# Type alias for a cohort of patients
+type Cohort = list[Patient]
+
 
 class VerificationResponse(BaseModel):
     """Response from verification LLM."""
@@ -61,4 +64,4 @@ class State(TypedDict, total=False):
     verification_tickets: List[str]
     verifications: List[List[VerificationResponse]]
     patient_ids: List[List[int]]
-    coded_patients: List[List[Patient]]
+    coded_cohorts: List[Cohort]
