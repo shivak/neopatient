@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Dict, List, Union, Any
+import pathlib
 import openai
 import jinja2
 import chromadb
@@ -8,6 +9,7 @@ from chromadb.api import ClientAPI
 import pandas as pd
 import pyarrow as pa
 from sentence_transformers import SentenceTransformer
+from huggingface_hub import snapshot_download
 from .matcher import batch_find_best_matching_codes
 from .models import PatientRecord, GenerationRecord
 from .sampler import sample_individual_patients
@@ -32,12 +34,28 @@ GENERATION_TEMPLATE = load_template(_generate_template_path)
 VERIFICATION_TEMPLATE = load_template(_verify_template_path)
 
 
+def _resolve_chroma_client(chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None]) -> chromadb.ClientAPI:
+    """Resolve chroma_db parameter to a ChromaDB client."""
+    from .database import load_chroma_client
+    
+    if chroma_db is None:
+        # Download pre-generated ChromaDB files from Hugging Face
+        chroma_path = snapshot_download("cab-harvard/neopatient")
+        return load_chroma_client(chroma_path)
+    elif isinstance(chroma_db, pathlib.Path):
+        return load_chroma_client(str(chroma_db))
+    elif isinstance(chroma_db, chromadb.ClientAPI):
+        return chroma_db
+    else:
+        raise ValueError("chroma_db must be a ChromaDB client, a pathlib.Path, or None")
+
+
 def generate_synthetic_patient_record(
     positive: str,
     negative: str,
     individual_description: str,
     patient_id: int,
-    chroma_client: chromadb.ClientAPI,
+    chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None],
     seed: int | None = None,
     generator: str = "gpt-4o",
     verifier: str = "gpt-4o",
@@ -54,7 +72,7 @@ def generate_synthetic_patient_record(
         negative: Negative cohort description for verification
         individual_description: Self-contained description of the individual patient
         patient_id: Unique patient identifier (generated during sampling)
-        chroma_client: The ChromaDB client for code matching
+        chroma_db: The ChromaDB client, path, or None for code matching
         seed: Optional seed for reproducibility
         generator: Model name for generation (default: "gpt-4o")
         verifier: Model name for verification (default: "gpt-4o")
@@ -65,6 +83,7 @@ def generate_synthetic_patient_record(
     Raises:
         ValueError: If the generated record does not satisfy the cohort criteria
     """
+    chroma_client = _resolve_chroma_client(chroma_db)
     client = openai.OpenAI()  # Assume API key is set via environment
 
     print(f"Generating record using: {generator}")
@@ -85,7 +104,9 @@ def generate_synthetic_patient_record(
     record = record_data  # list of tuples
 
     # Step 2: Match codes and create DataSchema
-    record = _match_codes([record], [patient_id], chroma_client)
+    matched_records = _match_codes([record], [patient_id], chroma_client)
+    df = pd.DataFrame(matched_records)
+    record = pa.Table.from_pandas(df, schema=DataSchema.schema)
 
     # Step 3: Verify the record satisfies cohort-level positive and negative descriptions (cohort-level, but description includes negatives)
     record_tsv = record.to_pandas().to_csv(sep="\t", index=False)
@@ -112,7 +133,7 @@ def generate_synthetic_patient_record(
 
 def generate_synthetic_patient_records_batch(
     cohort_specs: List[Dict[str, Any]],
-    chroma_client: chromadb.PersistentClient,
+    chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None],
     epsilon: float = 0.2,
     state: Dict[str, Any] | None = None,
     generator: str = "gpt-5",
@@ -134,7 +155,7 @@ def generate_synthetic_patient_records_batch(
             - count: Number of patients to generate for this cohort
             - positive: Positive cohort description
             - negative: Negative (anti-cohort) description
-        chroma_client: The ChromaDB client for code matching
+        chroma_db: The ChromaDB client, path, or None for code matching
         epsilon: Over-generation factor (deprecated, now exact count from sampling)
         state: Optional state to resume from a previous batch operation
         generator: Model name for generation (default: "gpt-4o")
@@ -146,17 +167,19 @@ def generate_synthetic_patient_records_batch(
         - List of lists of generated patient records (one list per cohort, each record is list of event dicts)
         - State dictionary for resuming if batch is not ready yet
     """
+    chroma_client = _resolve_chroma_client(chroma_db)
     client = openai.OpenAI()
 
     # If resuming from state, use existing state
     if state is not None:
         current_state = state.copy()
+        chroma_db = current_state["chroma_db"]
     else:
         # Initialize new state
         current_state = {
             "stage": "sampling",
             "cohort_specs": cohort_specs,
-            "chroma_client": chroma_client,
+            "chroma_db": chroma_db,
             "epsilon": epsilon,
             "generator": generator,
             "verifier": verifier,
@@ -168,6 +191,8 @@ def generate_synthetic_patient_records_batch(
             "verified_records": [],
             "completed_cohorts": [],
         }
+
+    chroma_client = _resolve_chroma_client(chroma_db)
 
     # Stage 1: Sample individual patients
     if current_state["stage"] == "sampling":
@@ -304,10 +329,13 @@ def _handle_matching_stage(
     client: openai.OpenAI, state: Dict[str, Any]
 ) -> Union[List[List[Dict]], Dict[str, Any]]:
     """Handle code matching stage and start verification."""
-    # Apply code matching to all generated records using true batch processing
-    state["code_matched_records"] = _match_codes(
-        state["generated_records"], state["chroma_client"]
-    )
+    chroma_client = _resolve_chroma_client(state["chroma_db"])
+    
+    # Apply code matching to all generated records
+    state["code_matched_records"] = []
+    for cohort_records, cohort_patient_ids in zip(state["generated_records"], state["patient_ids"]):
+        matched = _match_codes(cohort_records, cohort_patient_ids, chroma_client)
+        state["code_matched_records"].append(matched)
 
     # Start verification stage
     return _start_verification_stage(client, state)
@@ -454,14 +482,16 @@ def _download_batch_results(client: openai.OpenAI, file_id: str) -> List[Dict]:
 
 def _parse_generation_results(
     results: List[Dict], sampled_patients: List[Dict[int, str]]
-) -> tuple[List[List[GenerationRecord]], List[List[int]]]:
+) -> tuple[List[List[Dict]], List[List[int]]]:
     """Parse generation results and organize by cohort."""
-    cohort_records = [[] for _ in cohort_specs]
+    cohort_records = [[] for _ in sampled_patients]
+    patient_ids = [[] for _ in sampled_patients]
 
     for result in results:
         if result.get("response", {}).get("status_code") == 200:
             custom_id = result["custom_id"]
             cohort_idx = int(custom_id.split("_")[1])
+            patient_id = int(custom_id.split("_")[3])
             record_data = json.loads(
                 result["response"]["body"]["choices"][0]["message"]["content"]
             )
@@ -470,12 +500,13 @@ def _parse_generation_results(
             try:
                 validated_record = PatientRecord.model_validate(record_data)
                 cohort_records[cohort_idx].append(validated_record.model_dump())
+                patient_ids[cohort_idx].append(patient_id)
             except Exception as e:
                 print(f"Warning: Failed to validate record for {custom_id}: {e}")
                 # Skip invalid records
                 continue
 
-    return cohort_records
+    return cohort_records, patient_ids
 
 
 def _parse_verification_results(
@@ -498,7 +529,7 @@ def _parse_verification_results(
 
 def _match_codes(
     cohort_records: List[GenerationRecord], patient_ids: List[int], chroma_client: ClientAPI
-) -> pa.Table:
+) -> List[Dict]:
     """Match code descriptions to standardized codes using ChromaDB and return MEDS DataSchema table."""
     if not cohort_records:
         empty_df = pd.DataFrame(
@@ -540,5 +571,4 @@ def _match_codes(
             )
             idx += 1
 
-    df = pd.DataFrame(rows)
-    return pa.Table.from_pandas(df, schema=DataSchema.schema)
+    return rows

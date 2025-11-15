@@ -1,8 +1,9 @@
 import argparse
 import json
 import logging
+import pathlib
 import sys
-from neopatient import generate_synthetic_patient_record, generate_synthetic_patient_records_batch, load_chroma_client
+from neopatient import generate_synthetic_patient_record, generate_synthetic_patient_records_batch
 from neopatient.sampler import sample_individual_patients
 
 def main():
@@ -24,7 +25,7 @@ def main():
                        help="Over-generation factor for batch mode (default: 0.2)")
     
     # Common arguments
-    parser.add_argument("--chroma_db_path", default="clinprime_chroma", help="Path to ChromaDB database directory")
+    parser.add_argument("--chroma_db_path", default=None, help="Path to ChromaDB database directory, or None to download from Hugging Face")
     parser.add_argument("--generator", default="gpt-5-nano", help="Model name for generation")
     parser.add_argument("--verifier", default="gpt-5", help="Model name for verification")
     parser.add_argument("--sampler", default="gpt-5", help="Model name for sampling")
@@ -39,9 +40,8 @@ def main():
     )
     logger = logging.getLogger(__name__)
 
-    # Load ChromaDB client
-    logger.info("Loading ChromaDB client...")
-    chroma_client = load_chroma_client(args.chroma_db_path)
+    # Set ChromaDB parameter
+    chroma_db = pathlib.Path(args.chroma_db_path) if args.chroma_db_path else None
 
     if args.mode == "single":
         if not args.positive or not args.negative:
@@ -63,7 +63,7 @@ def main():
                 negative=args.negative,
                 individual_description=individual_description,
                 patient_id=patient_id,
-                chroma_client=chroma_client,
+                chroma_db=chroma_db,
                 seed=args.seed,
                 generator=args.generator,
                 verifier=args.verifier
@@ -103,7 +103,7 @@ def main():
             logger.info("Starting batch generation...")
             result = generate_synthetic_patient_records_batch(
                 cohort_specs=cohort_specs,
-                chroma_client=chroma_client,
+                chroma_db=chroma_db,
                 epsilon=args.epsilon,
                 state=state,
                 generator=args.generator,
