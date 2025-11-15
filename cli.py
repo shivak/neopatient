@@ -3,7 +3,7 @@ import logging
 import pathlib
 import sys
 import pyarrow as pa
-from neopatient import generate_synthetic_patient, generate_synthetic_cohort_with_state_file
+from neopatient import synthesize_patient, synthesize_cohort_with_state_file
 
 def main():
     parser = argparse.ArgumentParser(description="Neopatient CLI for generating synthetic patient records")
@@ -11,8 +11,8 @@ def main():
 
     # Single patient subcommand
     single_parser = subparsers.add_parser('single', help='Generate a single patient record')
-    single_parser.add_argument("--positive", help="Positive patient description")
-    single_parser.add_argument("--negative", help="Negative patient description")
+    single_parser.add_argument("--positive", required=True, help="Positive patient description")
+    single_parser.add_argument("--negative", required=True, help="Negative patient description")
     single_parser.add_argument("--out", required=True, help="Output path for parquet file")
     single_parser.add_argument("--seed", type=int, default=None, help="Seed for reproducibility")
     single_parser.add_argument("--chroma_db_path", default=None, help="Path to ChromaDB database directory, or None to download from Hugging Face")
@@ -21,8 +21,8 @@ def main():
 
     # Cohort subcommand
     cohort_parser = subparsers.add_parser('cohort', help='Generate a cohort of patient records')
-    cohort_parser.add_argument("--positive", help="Positive cohort description")
-    cohort_parser.add_argument("--negative", help="Negative cohort description")
+    cohort_parser.add_argument("--positive", required=True, help="Positive cohort description")
+    cohort_parser.add_argument("--negative", required=True, help="Negative cohort description")
     cohort_parser.add_argument("--size", type=int, required=True, help="Size of the cohort")
     cohort_parser.add_argument("--out", required=True, help="Output path for parquet file")
     cohort_parser.add_argument("--seed", type=int, default=None, help="Seed for reproducibility")
@@ -31,7 +31,7 @@ def main():
     cohort_parser.add_argument("--verifier", default="gpt-5", help="Model name for verification")
     cohort_parser.add_argument("--sampler", default="gpt-5", help="Model name for sampling")
     cohort_parser.add_argument("--poll_interval", type=int, default=15*60, help="Polling interval in seconds for batch completion")
-    cohort_parser.add_argument("--state-file", help="Path to state file for resuming batch operations")
+    cohort_parser.add_argument("--state-file", required=True, help="Path to state file for resuming batch operations")
 
     args = parser.parse_args()
 
@@ -51,12 +51,9 @@ def main():
     chroma_db = pathlib.Path(args.chroma_db_path) if args.chroma_db_path else None
 
     if args.command == 'single':
-        if not args.positive or not args.negative:
-            print("Error: --positive and --negative are required for single", file=sys.stderr)
-            sys.exit(1)
         try:
             logger.info("Generating patient record...")
-            record = generate_synthetic_patient(
+            record = synthesize_patient(
                 positive=args.positive,
                 negative=args.negative,
                 patient_id=1,
@@ -72,13 +69,10 @@ def main():
             sys.exit(1)
 
     elif args.command == 'cohort':
-        if not args.positive or not args.negative or not args.size:
-            print("Error: --positive, --negative, and --size are required for cohort", file=sys.stderr)
-            sys.exit(1)
         try:
             logger.info("Generating patient cohort...")
             cohort_specs = [{"positive": args.positive, "negative": args.negative, "count": args.size}]
-            result = generate_synthetic_cohort_with_state_file(
+            result = synthesize_cohort_with_state_file(
                 cohort_specs=cohort_specs,
                 chroma_db=chroma_db,
                 generator=args.generator,

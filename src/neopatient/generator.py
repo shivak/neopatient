@@ -54,7 +54,7 @@ def _resolve_chroma_client(chroma_db: Union[chromadb.ClientAPI, pathlib.Path, No
         raise ValueError("chroma_db must be a ChromaDB client, a pathlib.Path, or None")
 
 
-def generate_synthetic_patient(
+def synthesize_patient(
     positive: str,
     negative: str,
     patient_id: int,
@@ -129,7 +129,7 @@ def generate_synthetic_patient(
     return record
 
 
-def generate_synthetic_cohort(
+def synthesize_cohort(
     cohort_specs: List[Dict[str, Any]],
     chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None],
     epsilon: float = 0.2,
@@ -219,7 +219,7 @@ def generate_synthetic_cohort(
         raise ValueError(f"Unknown stage: {current_state['stage']}")
 
 
-def generate_synthetic_cohort_with_state_file(
+def synthesize_cohort_with_state_file(
     cohort_specs: List[Dict[str, Any]],
     chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None],
     generator: str = "gpt-5-nano",
@@ -248,7 +248,7 @@ def generate_synthetic_cohort_with_state_file(
         with open(state_file, 'r') as f:
             state = json.load(f)
     while True:
-        result = generate_synthetic_cohort(
+        result = synthesize_cohort(
             cohort_specs=cohort_specs,
             chroma_db=chroma_db,
             generator=generator,
