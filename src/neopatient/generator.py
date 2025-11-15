@@ -523,7 +523,7 @@ def _parse_verification_results(results: List[Dict]) -> List[List[VerificationRe
 
 def _match_codes(
     cohort_records: List[UncodedPatient], patient_ids: List[int], chroma_client: ClientAPI
-) -> List[Patient]:
+) -> Cohort:
     """Match code descriptions to standardized codes using ChromaDB and return list of patient records."""
     if not cohort_records:
         return []
@@ -543,7 +543,7 @@ def _match_codes(
     batch_results = batch_find_best_matching_codes(queries, chroma_client, model)
 
     # Build tables per patient
-    patients = []
+    cohort = []
     idx = 0
     for record, patient_id in zip(cohort_records, patient_ids):
         rows = []
@@ -561,6 +561,6 @@ def _match_codes(
             )
             idx += 1
         table = pa.Table.from_pylist(rows, schema=DataSchema.schema)
-        patients.append(table)
+        cohort.append(table)
 
-    return patients
+    return cohort
