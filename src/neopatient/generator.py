@@ -3,6 +3,7 @@ import os
 import random
 import string
 import sys
+import time
 from typing import Dict, List, Union, Any
 import pathlib
 import openai
@@ -53,7 +54,7 @@ def _resolve_chroma_client(chroma_db: Union[chromadb.ClientAPI, pathlib.Path, No
         raise ValueError("chroma_db must be a ChromaDB client, a pathlib.Path, or None")
 
 
-def generate_synthetic_patient_record(
+def generate_synthetic_patient(
     positive: str,
     negative: str,
     patient_id: int,
@@ -128,7 +129,7 @@ def generate_synthetic_patient_record(
     return record
 
 
-def generate_synthetic_patient_records_batch(
+def generate_synthetic_cohort(
     cohort_specs: List[Dict[str, Any]],
     chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None],
     epsilon: float = 0.2,
@@ -216,6 +217,55 @@ def generate_synthetic_patient_records_batch(
 
     else:
         raise ValueError(f"Unknown stage: {current_state['stage']}")
+
+
+def generate_synthetic_cohort_with_state_file(
+    cohort_specs: List[Dict[str, Any]],
+    chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None],
+    generator: str = "gpt-5-nano",
+    verifier: str = "gpt-5",
+    sampler: str = "gpt-5",
+    state_file: Union[str, pathlib.Path, None] = None,
+    poll_interval: int = 15 * 60,
+) -> List[Cohort]:
+    """
+    Generates synthetic patient cohorts with state file management and polling.
+
+    Args:
+        cohort_specs: List of cohort specifications
+        chroma_db: ChromaDB client, path, or None
+        generator: Model for generation
+        verifier: Model for verification
+        sampler: Model for sampling
+        state_file: Path to state file for resuming
+        poll_interval: Seconds to wait between polls
+
+    Returns:
+        List of cohorts (each cohort is list of Patient tables)
+    """
+    state = None
+    if state_file and pathlib.Path(state_file).exists():
+        with open(state_file, 'r') as f:
+            state = json.load(f)
+    while True:
+        result = generate_synthetic_cohort(
+            cohort_specs=cohort_specs,
+            chroma_db=chroma_db,
+            generator=generator,
+            verifier=verifier,
+            sampler=sampler,
+            state=state
+        )
+        if isinstance(result, list):
+            if state_file and pathlib.Path(state_file).exists():
+                os.unlink(state_file)
+            return result
+        else:
+            if state_file:
+                with open(state_file, 'w') as f:
+                    json.dump(result, f)
+            time.sleep(poll_interval)
+            state = result
 
 
 def _handle_sampling_stage(

@@ -15,7 +15,8 @@ dependencies = [
     "meds",
     "datasets",
     "huggingface_hub",
-    "pydantic"
+    "pydantic",
+    "pyarrow"
 ]
 requires-python = ">=3.8"
 readme = "README.md"
