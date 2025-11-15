@@ -16,7 +16,7 @@ def sample_individual_descriptions(
     positive: str,
     negative: str,
     n: int,
-    sampler_model: str = "gpt-4o"
+    sampler_model: str = "gpt-5"
 ) -> Dict[int, str]:
     """
     Samples individual patient descriptions that satisfy cohort criteria.
@@ -28,7 +28,7 @@ def sample_individual_descriptions(
         positive: Positive cohort description
         negative: Negative anti-cohort description
         n: Number of patients to sample
-        sampler_model: Model name for sampling (default: "gpt-4o")
+        sampler_model: Model name for sampling (default: "gpt-5")
 
     Returns:
         Dict of {patient_id: individual_description}

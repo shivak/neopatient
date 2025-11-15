@@ -59,8 +59,8 @@ def generate_synthetic_patient_record(
     patient_id: int,
     chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None],
     seed: int | None = None,
-    generator: str = "gpt-4o",
-    verifier: str = "gpt-4o",
+    generator: str = "gpt-5",
+    verifier: str = "gpt-5",
 ) -> Patient:
     """
     Generates a synthetic longitudinal patient record for an individual patient.
@@ -75,8 +75,8 @@ def generate_synthetic_patient_record(
         patient_id: Unique patient identifier
         chroma_db: The ChromaDB client, path, or None for code matching
         seed: Optional seed for reproducibility
-        generator: Model name for generation (default: "gpt-4o")
-        verifier: Model name for verification (default: "gpt-4o")
+        generator: Model name for generation (default: "gpt-5")
+        verifier: Model name for verification (default: "gpt-5")
 
     Returns:
         Generated patient record as MEDS DataSchema table
@@ -135,7 +135,7 @@ def generate_synthetic_patient_records_batch(
     state: State | None = None,
     generator: str = "gpt-5",
     verifier: str = "gpt-5-nano",
-    sampler: str = "gpt-4o",
+    sampler: str = "gpt-5",
 ) -> Union[List[Cohort], State]:
     """
     Generates synthetic patient records in batch using OpenAI's batch API.
@@ -155,9 +155,9 @@ def generate_synthetic_patient_records_batch(
         chroma_db: The ChromaDB client, path, or None for code matching
         epsilon: Over-generation factor (deprecated, now exact count from sampling)
         state: Optional state to resume from a previous batch operation
-        generator: Model name for generation (default: "gpt-4o")
-        verifier: Model name for verification (default: "gpt-4o")
-        sampler: Model name for sampling (default: "gpt-4o")
+        generator: Model name for generation (default: "gpt-5")
+        verifier: Model name for verification (default: "gpt-5-nano")
+        sampler: Model name for sampling (default: "gpt-5")
 
     Returns:
         Either:
@@ -260,9 +260,9 @@ def _handle_generation_stage(
                     "custom_id": f"cohort_{cohort_idx}_patient_{patient_id}_{salt}",
                     "method": "POST",
                     "url": "/v1/chat/completions",
-                    "body": {
-                        "model": state.get("generator", state.get("generation_model")),
-                        "messages": [{"role": "user", "content": prompt}],
+                     "body": {
+                         "model": state.get("generator"),
+                         "messages": [{"role": "user", "content": prompt}],
                         "response_format": {"type": "json_schema", "json_schema": UncodedPatient.model_json_schema()},
                         "temperature": 1.0,
                     },
@@ -362,9 +362,9 @@ def _start_verification_stage(
                     "custom_id": f"verify_cohort_{cohort_idx}_patient_{record_idx}_{salt}",
                     "method": "POST",
                     "url": "/v1/chat/completions",
-                    "body": {
-                        "model": state.get("verifier", state.get("verification_model")),
-                        "messages": [{"role": "user", "content": prompt}],
+                     "body": {
+                         "model": state.get("verifier"),
+                         "messages": [{"role": "user", "content": prompt}],
                         "response_format": {"type": "json_schema", "json_schema": VerificationResponse.model_json_schema()},
                         "temperature": 0.0,
                     },
