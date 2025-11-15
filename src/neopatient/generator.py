@@ -11,7 +11,7 @@ import pyarrow as pa
 from sentence_transformers import SentenceTransformer
 from huggingface_hub import snapshot_download
 from .matcher import batch_find_best_matching_codes
-from .models import PatientRecord, GenerationRecord
+from .models import GenerationRecord
 from .sampler import sample_individual_patients
 from meds.schema import DataSchema
 
@@ -482,7 +482,7 @@ def _download_batch_results(client: openai.OpenAI, file_id: str) -> List[Dict]:
 
 def _parse_generation_results(
     results: List[Dict], sampled_patients: List[Dict[int, str]]
-) -> tuple[List[List[Dict]], List[List[int]]]:
+) -> tuple[List[List[GenerationRecord]], List[List[int]]]:
     """Parse generation results and organize by cohort."""
     cohort_records = [[] for _ in sampled_patients]
     patient_ids = [[] for _ in sampled_patients]
@@ -496,15 +496,9 @@ def _parse_generation_results(
                 result["response"]["body"]["choices"][0]["message"]["content"]
             )
 
-            # Validate the record against the Pydantic model
-            try:
-                validated_record = PatientRecord.model_validate(record_data)
-                cohort_records[cohort_idx].append(validated_record.model_dump())
-                patient_ids[cohort_idx].append(patient_id)
-            except Exception as e:
-                print(f"Warning: Failed to validate record for {custom_id}: {e}")
-                # Skip invalid records
-                continue
+            # record_data is already a GenerationRecord (list of tuples)
+            cohort_records[cohort_idx].append(record_data)
+            patient_ids[cohort_idx].append(patient_id)
 
     return cohort_records, patient_ids
 
