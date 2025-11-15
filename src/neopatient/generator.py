@@ -219,7 +219,7 @@ def generate_synthetic_patient_records_batch(
 
 def _handle_sampling_stage(
     client: openai.OpenAI, state: State
-) -> Union[List[List[Dict]], State]:
+) -> Union[List[Cohort], State]:
     """Sample individual patient descriptions for each cohort using the sampler LLM."""
     if state["sampled_descriptions"]:
         # Already sampled, move to generation
@@ -239,7 +239,7 @@ def _handle_sampling_stage(
 
 def _handle_generation_stage(
     client: openai.OpenAI, state: State
-) -> Union[List[List[Dict]], State]:
+) -> Union[List[Cohort], State]:
     """Handle the initial generation stage using batch API."""
     if state["generation_tickets"]:
         # Already submitted generation requests, move to checking
@@ -284,7 +284,7 @@ def _handle_generation_stage(
 
 def _handle_check_generation_stage(
     client: openai.OpenAI, state: State
-) -> Union[List[List[Dict]], State]:
+) -> Union[List[Cohort], State]:
     """Check if generation batch is ready and start verification if so."""
     if not state["generation_tickets"]:
         raise ValueError("No generation tickets found in state")
@@ -323,7 +323,7 @@ def _handle_check_generation_stage(
 
 def _handle_matching_stage(
     client: openai.OpenAI, state: State
-) -> Union[List[List[Dict]], State]:
+) -> Union[List[Cohort], State]:
     """Handle code matching stage and start verification."""
     chroma_client = _resolve_chroma_client(state["chroma_db"])
     
@@ -386,7 +386,7 @@ def _start_verification_stage(
 
 def _handle_check_verification_stage(
     client: openai.OpenAI, state: State
-) -> Union[List[List[Dict]], State]:
+) -> Union[List[Cohort], State]:
     """Check if verification batch is ready."""
     if not state["verification_tickets"]:
         raise ValueError("No verification tickets found in state")
