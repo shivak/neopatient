@@ -14,7 +14,8 @@ dependencies = [
     "jinja2>=3.1.0",
     "meds",
     "datasets",
-    "huggingface_hub"
+    "huggingface_hub",
+    "pydantic"
 ]
 requires-python = ">=3.8"
 readme = "README.md"

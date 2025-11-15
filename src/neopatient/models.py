@@ -1,6 +1,8 @@
 from typing import List, Union, TypedDict, Dict, Any
 from enum import Enum
 import pathlib
+from pydantic import BaseModel, RootModel, Field
+import pyarrow as pa
 
 
 class CodeSystem(str, Enum):
@@ -20,15 +22,29 @@ class CodeSystem(str, Enum):
     ICD10 = "icd10"
 
 
-# For MEDS generation
-# GenerationRecord: List of tuples where each tuple is (time, code_system, code_desc, numeric_value, unit, text_value)
-# - time: str or None, ISO timestamp or null for static measurements
-# - code_system: CodeSystem, the vocabulary system for this code (non-null)
-# - code_desc: str, brief textual description of the code/measurement/event
-# - numeric_value: float or None, numeric result associated with this measurement
-# - unit: str or None, unit for the numeric_value
-# - text_value: str or None, text result (reserved for text measurements)
-GenerationRecord = List[tuple[Union[str, None], CodeSystem, str, Union[float, None], Union[str, None], Union[str, None]]]
+class Event(BaseModel):
+    """Individual patient event/measurement record."""
+    time: str | None = Field(description="ISO timestamp or null for static measurements")
+    code_system: CodeSystem = Field(description="vocabulary system for this code")
+    code_desc: str = Field(description="brief textual description of the code/measurement/event")
+    numeric_value: float | None = Field(description="numeric result if applicable")
+    unit: str | None = Field(description="unit for the numeric_value if applicable")
+    text_value: str | None = Field(description="text result if applicable")
+
+
+class UncodedPatient(RootModel[List[Event]]):
+    """List of uncoded patient events before code matching."""
+    pass
+
+
+# Type alias for a single patient's MEDS data table
+Patient = pa.Table
+
+
+class VerificationResponse(BaseModel):
+    """Response from verification LLM."""
+    satisfactory: bool
+    criticism: str
 
 
 class State(TypedDict, total=False):
@@ -41,9 +57,9 @@ class State(TypedDict, total=False):
     sampler: str
     sampled_patients: List[Dict[int, str]]
     generation_tickets: List[str]
-    generated_records: List[List[GenerationRecord]]
+    generated_records: List[List[UncodedPatient]]
     verification_tickets: List[str]
-    verified_records: List[List[Dict[str, Any]]]
+    verified_records: List[List[VerificationResponse]]
     completed_cohorts: List[Any]
     patient_ids: List[List[int]]
-    code_matched_records: List[List[Dict[str, Any]]]
+    code_matched_records: List[List[pa.Table]]

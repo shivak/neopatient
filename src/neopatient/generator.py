@@ -11,7 +11,7 @@ import pyarrow as pa
 from sentence_transformers import SentenceTransformer
 from huggingface_hub import snapshot_download
 from .matcher import batch_find_best_matching_codes
-from .models import GenerationRecord, State
+from .models import UncodedPatient, VerificationResponse, Event, State
 from .sampler import sample_individual_patients
 from meds.schema import DataSchema
 
@@ -93,20 +93,18 @@ def generate_synthetic_patient_record(
     response = client.chat.completions.create(
         model=generator,
         messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
+        response_format={"type": "json_schema", "json_schema": UncodedPatient.model_json_schema()},
         #        seed=seed,
         temperature=0.7,
     )
     content = response.choices[0].message.content
     if content is None:
         raise ValueError("LLM response content is None")
-    record_data = json.loads(content)
-    record = record_data  # list of tuples
+    record_data = UncodedPatient.model_validate_json(content)
+    record = record_data.root  # list of Event
 
     # Step 2: Match codes and create DataSchema
-    matched_records = _match_codes([record], [patient_id], chroma_client)
-    df = pd.DataFrame(matched_records)
-    record = pa.Table.from_pandas(df, schema=DataSchema.schema)
+    record = _match_codes([record], [patient_id], chroma_client)
 
     # Step 3: Verify the record satisfies cohort-level positive and negative descriptions (cohort-level, but description includes negatives)
     record_tsv = record.to_pandas().to_csv(sep="\t", index=False)
@@ -116,16 +114,16 @@ def generate_synthetic_patient_record(
     ver_response = client.chat.completions.create(
         model=verifier,
         messages=[{"role": "user", "content": ver_prompt}],
-        response_format={"type": "json_object"},
+        response_format={"type": "json_schema", "json_schema": VerificationResponse.model_json_schema()},
         #        seed=seed,
         temperature=0.0,
     )
-    verification = json.loads(ver_response.choices[0].message.content)
+    verification = VerificationResponse.model_validate_json(ver_response.choices[0].message.content)
 
     # Step 4: Check satisfaction
-    if not verification["satisfactory"]:
+    if not verification.satisfactory:
         raise ValueError(
-            f"Record does not satisfy criteria: {verification['criticism']}"
+            f"Record does not satisfy criteria: {verification.criticism}"
         )
 
     return record
@@ -266,7 +264,7 @@ def _handle_generation_stage(
                     "body": {
                         "model": state.get("generator", state.get("generation_model")),
                         "messages": [{"role": "user", "content": prompt}],
-                        "response_format": {"type": "json_object"},
+                        "response_format": {"type": "json_schema", "json_schema": UncodedPatient.model_json_schema()},
                         "temperature": 1.0,
                     },
                 }
@@ -354,9 +352,9 @@ def _start_verification_stage(
         negative = spec["negative"]
 
         for record_idx, record in enumerate(cohort_records):
-            record_str = json.dumps(record, indent=2, default=str)
+            record_tsv = record.to_pandas().to_csv(sep="\t", index=False)
             prompt = VERIFICATION_TEMPLATE.render(
-                record_json=record_str, positive=positive, negative=negative
+                record_tsv=record_tsv, positive=positive, negative=negative
             )
 
             batch_requests.append(
@@ -367,7 +365,7 @@ def _start_verification_stage(
                     "body": {
                         "model": state.get("verifier", state.get("verification_model")),
                         "messages": [{"role": "user", "content": prompt}],
-                        "response_format": {"type": "json_object"},
+                        "response_format": {"type": "json_schema", "json_schema": VerificationResponse.model_json_schema()},
                         "temperature": 0.0,
                     },
                 }
@@ -405,9 +403,7 @@ def _handle_check_verification_stage(
             results = _download_batch_results(client, batch_output)
 
             # Parse verification results
-            state["verified_records"] = _parse_verification_results(
-                results, state["code_matched_records"]
-            )
+            state["verified_records"] = _parse_verification_results(results)
 
             # Move to finalization
             state["stage"] = "finalize"
@@ -438,16 +434,13 @@ def _handle_finalize_stage(state: State) -> List[pa.Table]:
         satisfactory_records = []
 
         for record, verification in zip(cohort_records, cohort_verifications):
-            if verification["satisfactory"]:
+            if verification.satisfactory:
                 # Records already have code matching applied
                 satisfactory_records.append(record)
 
-                if len(satisfactory_records) >= target_count:
-                    break
-
-        df = pd.DataFrame(satisfactory_records)
-        table = pa.Table.from_pandas(df, schema=DataSchema.schema)
-        final_results.append(table)
+        if satisfactory_records:
+            table = pa.concat_tables(satisfactory_records)
+            final_results.append(table)
 
     return final_results
 
@@ -484,7 +477,7 @@ def _download_batch_results(client: openai.OpenAI, file_id: str) -> List[Dict]:
 
 def _parse_generation_results(
     results: List[Dict], sampled_patients: List[Dict[int, str]]
-) -> tuple[List[List[GenerationRecord]], List[List[int]]]:
+) -> tuple[List[List[UncodedPatient]], List[List[int]]]:
     """Parse generation results and organize by cohort."""
     cohort_records = [[] for _ in sampled_patients]
     patient_ids = [[] for _ in sampled_patients]
@@ -494,28 +487,34 @@ def _parse_generation_results(
             custom_id = result["custom_id"]
             cohort_idx = int(custom_id.split("_")[1])
             patient_id = int(custom_id.split("_")[3])
-            record_data = json.loads(
+            record_data = UncodedPatient.model_validate_json(
                 result["response"]["body"]["choices"][0]["message"]["content"]
             )
 
-            # record_data is already a GenerationRecord (list of tuples)
             cohort_records[cohort_idx].append(record_data)
             patient_ids[cohort_idx].append(patient_id)
 
     return cohort_records, patient_ids
 
 
-def _parse_verification_results(
-    results: List[Dict], generated_records: List[List[Dict]]
-) -> List[List[Dict]]:
+def _parse_verification_results(results: List[Dict]) -> List[List[VerificationResponse]]:
     """Parse verification results and organize by cohort."""
-    cohort_verifications = [[] for _ in generated_records]
+    # Determine number of cohorts from results
+    cohort_indices = set()
+    for result in results:
+        if result.get("response", {}).get("status_code") == 200:
+            custom_id = result["custom_id"]
+            cohort_idx = int(custom_id.split("_")[2])
+            cohort_indices.add(cohort_idx)
+    
+    max_cohort_idx = max(cohort_indices) if cohort_indices else 0
+    cohort_verifications = [[] for _ in range(max_cohort_idx + 1)]
 
     for result in results:
         if result.get("response", {}).get("status_code") == 200:
             custom_id = result["custom_id"]
             cohort_idx = int(custom_id.split("_")[2])
-            verification = json.loads(
+            verification = VerificationResponse.model_validate_json(
                 result["response"]["body"]["choices"][0]["message"]["content"]
             )
             cohort_verifications[cohort_idx].append(verification)
@@ -524,8 +523,8 @@ def _parse_verification_results(
 
 
 def _match_codes(
-    cohort_records: List[GenerationRecord], patient_ids: List[int], chroma_client: ClientAPI
-) -> List[Dict]:
+    cohort_records: List[UncodedPatient], patient_ids: List[int], chroma_client: ClientAPI
+) -> pa.Table:
     """Match code descriptions to standardized codes using ChromaDB and return MEDS DataSchema table."""
     if not cohort_records:
         empty_df = pd.DataFrame(
@@ -537,9 +536,9 @@ def _match_codes(
     all_descriptions = []
     systems = []
     for record in cohort_records:
-        for row in record:
-            systems.append(row[1])  # code_system is index 1
-            all_descriptions.append(row[2])  # code_desc is now index 2
+        for row in record.root:
+            systems.append(row.code_system)
+            all_descriptions.append(row.code_desc)
 
     queries = list(zip(systems, all_descriptions))
 
@@ -551,20 +550,20 @@ def _match_codes(
     rows = []
     idx = 0
     for record, patient_id in zip(cohort_records, patient_ids):
-        for row in record:
-            time, code_system, code_desc, numeric_value, unit, text_value = row
+        for row in record.root:
             code, matched_desc = batch_results[idx]
-            text_value = matched_desc[:128] if matched_desc else text_value
+            text_value = matched_desc[:128] if matched_desc else row.text_value
             rows.append(
                 {
                     "subject_id": patient_id,
-                    "time": time,
+                    "time": row.time,
                     "code": code,
-                    "numeric_value": numeric_value,
-                    "unit": unit,
+                    "numeric_value": row.numeric_value,
+                    "unit": row.unit,
                     "text_value": text_value,
                 }
             )
             idx += 1
 
-    return rows
+    df = pd.DataFrame(rows)
+    return pa.Table.from_pandas(df, schema=DataSchema.schema)
