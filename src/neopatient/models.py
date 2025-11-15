@@ -1,5 +1,6 @@
-from typing import List, Union
+from typing import List, Union, TypedDict, Dict, Any
 from enum import Enum
+import pathlib
 
 
 class CodeSystem(str, Enum):
@@ -28,3 +29,21 @@ class CodeSystem(str, Enum):
 # - unit: str or None, unit for the numeric_value
 # - text_value: str or None, text result (reserved for text measurements)
 GenerationRecord = List[tuple[Union[str, None], CodeSystem, str, Union[float, None], Union[str, None], Union[str, None]]]
+
+
+class State(TypedDict, total=False):
+    stage: str
+    cohort_specs: List[Dict[str, Any]]
+    chroma_db: Any
+    epsilon: float
+    generator: str
+    verifier: str
+    sampler: str
+    sampled_patients: List[Dict[int, str]]
+    generation_tickets: List[str]
+    generated_records: List[List[GenerationRecord]]
+    verification_tickets: List[str]
+    verified_records: List[List[Dict[str, Any]]]
+    completed_cohorts: List[Any]
+    patient_ids: List[List[int]]
+    code_matched_records: List[List[Dict[str, Any]]]

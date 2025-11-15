@@ -11,7 +11,7 @@ import pyarrow as pa
 from sentence_transformers import SentenceTransformer
 from huggingface_hub import snapshot_download
 from .matcher import batch_find_best_matching_codes
-from .models import GenerationRecord
+from .models import GenerationRecord, State
 from .sampler import sample_individual_patients
 from meds.schema import DataSchema
 
@@ -135,11 +135,11 @@ def generate_synthetic_patient_records_batch(
     cohort_specs: List[Dict[str, Any]],
     chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None],
     epsilon: float = 0.2,
-    state: Dict[str, Any] | None = None,
+    state: State | None = None,
     generator: str = "gpt-5",
     verifier: str = "gpt-5-nano",
     sampler: str = "gpt-4o",
-) -> Union[List[pa.Table], Dict[str, Any]]:
+) -> Union[List[pa.Table], State]:
     """
     Generates synthetic patient records in batch using OpenAI's batch API.
 
@@ -223,8 +223,8 @@ def generate_synthetic_patient_records_batch(
 
 
 def _handle_sampling_stage(
-    client: openai.OpenAI, state: Dict[str, Any]
-) -> Union[List[List[Dict]], Dict[str, Any]]:
+    client: openai.OpenAI, state: State
+) -> Union[List[List[Dict]], State]:
     """Sample individual patient descriptions for each cohort using the sampler LLM."""
     if state["sampled_patients"]:
         # Already sampled, move to generation
@@ -243,8 +243,8 @@ def _handle_sampling_stage(
 
 
 def _handle_generation_stage(
-    client: openai.OpenAI, state: Dict[str, Any]
-) -> Union[List[List[Dict]], Dict[str, Any]]:
+    client: openai.OpenAI, state: State
+) -> Union[List[List[Dict]], State]:
     """Handle the initial generation stage using batch API."""
     if state["generation_tickets"]:
         # Already submitted generation requests, move to checking
@@ -287,8 +287,8 @@ def _handle_generation_stage(
 
 
 def _handle_check_generation_stage(
-    client: openai.OpenAI, state: Dict[str, Any]
-) -> Union[List[List[Dict]], Dict[str, Any]]:
+    client: openai.OpenAI, state: State
+) -> Union[List[List[Dict]], State]:
     """Check if generation batch is ready and start verification if so."""
     if not state["generation_tickets"]:
         raise ValueError("No generation tickets found in state")
@@ -326,8 +326,8 @@ def _handle_check_generation_stage(
 
 
 def _handle_matching_stage(
-    client: openai.OpenAI, state: Dict[str, Any]
-) -> Union[List[List[Dict]], Dict[str, Any]]:
+    client: openai.OpenAI, state: State
+) -> Union[List[List[Dict]], State]:
     """Handle code matching stage and start verification."""
     chroma_client = _resolve_chroma_client(state["chroma_db"])
     
@@ -342,8 +342,8 @@ def _handle_matching_stage(
 
 
 def _start_verification_stage(
-    client: openai.OpenAI, state: Dict[str, Any]
-) -> Union[List[List[Dict]], Dict[str, Any]]:
+    client: openai.OpenAI, state: State
+) -> Union[List[List[Dict]], State]:
     """Start verification stage using batch API."""
     # Prepare verification requests
     batch_requests = []
@@ -388,8 +388,8 @@ def _start_verification_stage(
 
 
 def _handle_check_verification_stage(
-    client: openai.OpenAI, state: Dict[str, Any]
-) -> Union[List[List[Dict]], Dict[str, Any]]:
+    client: openai.OpenAI, state: State
+) -> Union[List[List[Dict]], State]:
     """Check if verification batch is ready."""
     if not state["verification_tickets"]:
         raise ValueError("No verification tickets found in state")
@@ -426,7 +426,7 @@ def _handle_check_verification_stage(
         raise RuntimeError(f"Failed to check verification batch status: {e}")
 
 
-def _handle_finalize_stage(state: Dict[str, Any]) -> List[pa.Table]:
+def _handle_finalize_stage(state: State) -> List[pa.Table]:
     """Finalize results by filtering satisfactory records."""
     final_results = []
 
