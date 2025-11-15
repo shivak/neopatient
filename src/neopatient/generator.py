@@ -182,12 +182,11 @@ def generate_synthetic_patient_records_batch(
             "generator": generator,
             "verifier": verifier,
             "sampler": sampler,
-            "sampled_patients": [],
+            "sampled_descriptions": [],
             "generation_tickets": [],
             "generated_records": [],
             "verification_tickets": [],
-            "verified_records": [],
-            "completed_cohorts": [],
+            "verifications": [],
         }
 
     chroma_client = _resolve_chroma_client(chroma_db)
@@ -224,7 +223,7 @@ def _handle_sampling_stage(
     client: openai.OpenAI, state: State
 ) -> Union[List[List[Dict]], State]:
     """Sample individual patient descriptions for each cohort using the sampler LLM."""
-    if state["sampled_patients"]:
+    if state["sampled_descriptions"]:
         # Already sampled, move to generation
         state["stage"] = "generation"
         return _handle_generation_stage(client, state)
@@ -234,7 +233,7 @@ def _handle_sampling_stage(
         sampled = sample_individual_patients(
             spec["positive"], spec["negative"], spec["count"], state["sampler"]
         )
-        state["sampled_patients"].append(sampled)
+        state["sampled_descriptions"].append(sampled)
 
     state["stage"] = "generation"
     return _handle_generation_stage(client, state)
@@ -252,7 +251,7 @@ def _handle_generation_stage(
     # Prepare batch requests
     batch_requests = []
 
-    for cohort_idx, sampled in enumerate(state["sampled_patients"]):
+    for cohort_idx, sampled in enumerate(state["sampled_descriptions"]):
         for patient_id, desc in sampled.items():
             prompt = GENERATION_TEMPLATE.render(individual_description=desc)
 
@@ -303,7 +302,7 @@ def _handle_check_generation_stage(
 
             # Parse generation results
             state["generated_records"], state["patient_ids"] = _parse_generation_results(
-                results, state["sampled_patients"]
+                results, state["sampled_descriptions"]
             )
 
             # Move to matching stage
@@ -330,10 +329,10 @@ def _handle_matching_stage(
     chroma_client = _resolve_chroma_client(state["chroma_db"])
     
     # Apply code matching to all generated records
-    state["code_matched_records"] = []
+    state["coded_patients"] = []
     for cohort_records, cohort_patient_ids in zip(state["generated_records"], state["patient_ids"]):
         matched = _match_codes(cohort_records, cohort_patient_ids, chroma_client)
-        state["code_matched_records"].append(matched)
+        state["coded_patients"].append(matched)
 
     # Start verification stage
     return _start_verification_stage(client, state)
@@ -346,7 +345,7 @@ def _start_verification_stage(
     # Prepare verification requests
     batch_requests = []
 
-    for cohort_idx, cohort_records in enumerate(state["code_matched_records"]):
+    for cohort_idx, cohort_records in enumerate(state["coded_patients"]):
         spec = state["cohort_specs"][cohort_idx]
         positive = spec["positive"]
         negative = spec["negative"]
@@ -403,7 +402,7 @@ def _handle_check_verification_stage(
             results = _download_batch_results(client, batch_output)
 
             # Parse verification results
-            state["verified_records"] = _parse_verification_results(results)
+            state["verifications"] = _parse_verification_results(results)
 
             # Move to finalization
             state["stage"] = "finalize"
@@ -427,7 +426,7 @@ def _handle_finalize_stage(state: State) -> List[Patient]:
     final_results = []
 
     for cohort_idx, (cohort_records, cohort_verifications) in enumerate(
-        zip(state["code_matched_records"], state["verified_records"])
+        zip(state["coded_patients"], state["verifications"])
     ):
         spec = state["cohort_specs"][cohort_idx]
         target_count = spec["count"]
@@ -476,11 +475,11 @@ def _download_batch_results(client: openai.OpenAI, file_id: str) -> List[Dict]:
 
 
 def _parse_generation_results(
-    results: List[Dict], sampled_patients: List[Dict[int, str]]
+    results: List[Dict], sampled_descriptions: List[Dict[int, str]]
 ) -> tuple[List[List[UncodedPatient]], List[List[int]]]:
     """Parse generation results and organize by cohort."""
-    cohort_records = [[] for _ in sampled_patients]
-    patient_ids = [[] for _ in sampled_patients]
+    cohort_records = [[] for _ in sampled_descriptions]
+    patient_ids = [[] for _ in sampled_descriptions]
 
     for result in results:
         if result.get("response", {}).get("status_code") == 200:

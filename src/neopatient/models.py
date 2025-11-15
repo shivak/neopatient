@@ -55,11 +55,10 @@ class State(TypedDict, total=False):
     generator: str
     verifier: str
     sampler: str
-    sampled_patients: List[Dict[int, str]]
+    sampled_descriptions: List[Dict[int, str]]
     generation_tickets: List[str]
     generated_records: List[List[UncodedPatient]]
     verification_tickets: List[str]
-    verified_records: List[List[VerificationResponse]]
-    completed_cohorts: List[Any]
+    verifications: List[List[VerificationResponse]]
     patient_ids: List[List[int]]
-    code_matched_records: List[List[Patient]]
+    coded_patients: List[List[Patient]]
