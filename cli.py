@@ -2,7 +2,7 @@ import argparse
 import json
 import logging
 import sys
-from neopatient import generate_synthetic_patient_record, generate_synthetic_patient_records_batch, setup_databases, load_chroma_client
+from neopatient import generate_synthetic_patient_record, generate_synthetic_patient_records_batch, load_chroma_client
 from neopatient.sampler import sample_individual_patients
 
 def main():
@@ -25,7 +25,6 @@ def main():
     
     # Common arguments
     parser.add_argument("--chroma_db_path", default="clinprime_chroma", help="Path to ChromaDB database directory")
-    parser.add_argument("--parquet_path", help="Path to clinprime_mapping.parquet file for setup")
     parser.add_argument("--generator", default="gpt-5-nano", help="Model name for generation")
     parser.add_argument("--verifier", default="gpt-5", help="Model name for verification")
     parser.add_argument("--sampler", default="gpt-5", help="Model name for sampling")
@@ -39,12 +38,6 @@ def main():
         datefmt='%H:%M:%S'
     )
     logger = logging.getLogger(__name__)
-
-    if args.parquet_path:
-        logger.info("Setting up databases...")
-        setup_databases(args.parquet_path, args.chroma_db_path)
-        logger.info("Database setup completed")
-        print(f"Databases setup completed at {args.chroma_db_path}")
 
     # Load ChromaDB client
     logger.info("Loading ChromaDB client...")

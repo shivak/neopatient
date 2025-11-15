@@ -24,3 +24,4 @@ build-backend = "setuptools.build_meta"
 
 [project.scripts]
 neopatient = "neopatient.cli:main"
+neopatient-embed = "neopatient.embed:main"
