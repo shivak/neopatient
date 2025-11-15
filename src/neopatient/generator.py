@@ -100,7 +100,7 @@ def generate_synthetic_patient_record(
         raise ValueError("LLM response content is None")
     record_data = UncodedPatient.model_validate_json(content)
     # Step 2: Match codes and create DataSchema
-    record = _match_codes([record_data], [patient_id], chroma_client)
+    record = _match_codes([record_data], [patient_id], chroma_client)[0]
 
     # Step 3: Verify the record satisfies cohort-level positive and negative descriptions (cohort-level, but description includes negatives)
     record_tsv = record.to_pandas().to_csv(sep="\t", index=False)
@@ -518,14 +518,11 @@ def _parse_verification_results(results: List[Dict]) -> List[List[VerificationRe
 
 
 def _match_codes(
-    cohort_records: List[UncodedPatient], patient_ids: List[int],     chroma_client: ClientAPI
-) -> Patient:
-    """Match code descriptions to standardized codes using ChromaDB and return MEDS DataSchema table."""
+    cohort_records: List[UncodedPatient], patient_ids: List[int], chroma_client: ClientAPI
+) -> List[Patient]:
+    """Match code descriptions to standardized codes using ChromaDB and return list of MEDS DataSchema tables."""
     if not cohort_records:
-        empty_df = pd.DataFrame(
-            columns=["subject_id", "time", "code", "numeric_value", "unit", "text_value"]
-        )
-        return pa.Table.from_pandas(empty_df, schema=DataSchema.schema)
+        return []
 
     # Collect all descriptions to match
     all_descriptions = []
@@ -541,13 +538,13 @@ def _match_codes(
     model = SentenceTransformer("abhinand/MedEmbed-large-v0.1")
     batch_results = batch_find_best_matching_codes(queries, chroma_client, model)
 
-    # Build rows for DataSchema
-    rows = []
+    # Build tables per patient
+    patients = []
     idx = 0
     for record, patient_id in zip(cohort_records, patient_ids):
+        rows = []
         for row in record.root:
             code, matched_desc = batch_results[idx]
-            text_value = matched_desc[:128] if matched_desc else row.text_value
             rows.append(
                 {
                     "subject_id": patient_id,
@@ -555,10 +552,11 @@ def _match_codes(
                     "code": code,
                     "numeric_value": row.numeric_value,
                     "unit": row.unit,
-                    "text_value": text_value,
+                    "text_value": row.text_value,
                 }
             )
             idx += 1
+        table = pa.Table.from_pylist(rows, schema=DataSchema.schema)
+        patients.append(table)
 
-    df = pd.DataFrame(rows)
-    return pa.Table.from_pandas(df, schema=DataSchema.schema)
+    return patients
