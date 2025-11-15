@@ -527,7 +527,7 @@ def _match_codes(
     """Match code descriptions to standardized codes using ChromaDB and return MEDS DataSchema table."""
     if not cohort_records:
         empty_df = pd.DataFrame(
-            columns=["subject_id", "time", "code", "numeric_value", "text_value"]
+            columns=["subject_id", "time", "code", "numeric_value", "unit", "text_value"]
         )
         return pa.Table.from_pandas(empty_df, schema=DataSchema.schema)
 
@@ -550,7 +550,7 @@ def _match_codes(
     idx = 0
     for record, patient_id in zip(cohort_records, patient_ids):
         for row in record:
-            time, code_system, code_desc, numeric_value, text_value = row
+            time, code_system, code_desc, numeric_value, unit, text_value = row
             code, matched_desc = batch_results[idx]
             text_value = matched_desc[:128] if matched_desc else text_value
             rows.append(
@@ -559,6 +559,7 @@ def _match_codes(
                     "time": time,
                     "code": code,
                     "numeric_value": numeric_value,
+                    "unit": unit,
                     "text_value": text_value,
                 }
             )

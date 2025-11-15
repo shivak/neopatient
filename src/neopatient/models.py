@@ -20,10 +20,11 @@ class CodeSystem(str, Enum):
 
 
 # For MEDS generation
-# GenerationRecord: List of tuples where each tuple is (time, code_system, code_desc, numeric_value, text_value)
+# GenerationRecord: List of tuples where each tuple is (time, code_system, code_desc, numeric_value, unit, text_value)
 # - time: str or None, ISO timestamp or null for static measurements
 # - code_system: CodeSystem, the vocabulary system for this code (non-null)
 # - code_desc: str, brief textual description of the code/measurement/event
 # - numeric_value: float or None, numeric result associated with this measurement
-# - text_value: str or None, text result or unit
-GenerationRecord = List[tuple[Union[str, None], CodeSystem, str, Union[float, None], Union[str, None]]]
+# - unit: str or None, unit for the numeric_value
+# - text_value: str or None, text result (reserved for text measurements)
+GenerationRecord = List[tuple[Union[str, None], CodeSystem, str, Union[float, None], Union[str, None], Union[str, None]]]
