@@ -18,6 +18,7 @@ def main():
     single_parser.add_argument("--chroma_db_path", default=None, help="Path to ChromaDB database directory, or None to download from Hugging Face")
     single_parser.add_argument("--generator", default="gpt-5-nano", help="Model name for generation")
     single_parser.add_argument("--verifier", default="gpt-5", help="Model name for verification")
+    single_parser.add_argument("--record-type", default="ehr-outpatient", choices=["claims", "ehr-inpatient", "ehr-outpatient"], help="Type of record")
 
     # Cohort subcommand
     cohort_parser = subparsers.add_parser('cohort', help='Generate a cohort of patient records')
@@ -30,6 +31,7 @@ def main():
     cohort_parser.add_argument("--generator", default="gpt-5-nano", help="Model name for generation")
     cohort_parser.add_argument("--verifier", default="gpt-5", help="Model name for verification")
     cohort_parser.add_argument("--sampler", default="gpt-5", help="Model name for sampling")
+    cohort_parser.add_argument("--record-type", default="ehr-outpatient", choices=["claims", "ehr-inpatient", "ehr-outpatient"], help="Type of record")
     cohort_parser.add_argument("--poll_interval", type=int, default=15*60, help="Polling interval in seconds for batch completion")
     cohort_parser.add_argument("--state-file", required=True, help="Path to state file for resuming batch operations")
 
@@ -60,7 +62,8 @@ def main():
                 chroma_db=chroma_db,
                 seed=args.seed,
                 generator=args.generator,
-                verifier=args.verifier
+                verifier=args.verifier,
+                record_type=args.record_type
             )
             logger.info("Patient record generated")
             pa.parquet.write_table(record, args.out)
@@ -71,7 +74,7 @@ def main():
     elif args.command == 'cohort':
         try:
             logger.info("Generating patient cohort...")
-            cohort_specs = [{"positive": args.positive, "negative": args.negative, "count": args.size}]
+            cohort_specs = [{"positive": args.positive, "negative": args.negative, "count": args.size, "record_type": args.record_type}]
             result = synthesize_cohort_with_state_file(
                 cohort_specs=cohort_specs,
                 chroma_db=chroma_db,

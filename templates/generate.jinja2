@@ -9,7 +9,7 @@ Generate a longitudinal record for this specific synthetic patient: {{individual
 * text_value: text result if applicable, else null (reserved for text measurements)
 * include static measurements for gender, race, and ethnicity
 * begin the trajectory on their birthday with birth-related descriptions
-* this is an outpatient record, and should have on the order of 80 events from 3 visits. I **INSIST** on you generating a full-length record -- yes, it will be long.
+* this is {% if record_type == 'claims' %}a claims{% elif record_type == 'ehr-inpatient' %}an EHR inpatient{% elif record_type == 'ehr-outpatient' %}an EHR outpatient{% endif %} record.
 
 --- example output ---
 

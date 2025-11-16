@@ -4,7 +4,7 @@ import random
 import string
 import sys
 import time
-from typing import Dict, List, Union, Any
+from typing import Dict, List, Union, Any, Tuple
 import pathlib
 import openai
 import jinja2
@@ -38,6 +38,20 @@ GENERATION_TEMPLATE = load_template(_generate_template_path)
 VERIFICATION_TEMPLATE = load_template(_verify_template_path)
 
 
+def _get_csv_path(record_type: str) -> str:
+    if record_type == "ehr-inpatient":
+        return os.path.join(_project_root, "data", "ehr-inpatient.csv")
+    else:
+        return os.path.join(_project_root, "data", "ehr-outpatient.csv")
+
+
+def sample_total_and_unique(csv_path: str, n: int) -> List[Tuple[int, int]]:
+    """Sample n (total_codes, unique_codes) pairs with replacement from CSV."""
+    df = pd.read_csv(csv_path)
+    pairs = list(zip(df['len'], df['uniqs']))
+    return random.choices(pairs, k=n)
+
+
 def _resolve_chroma_client(chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None]) -> chromadb.ClientAPI:
     """Resolve chroma_db parameter to a ChromaDB client."""
     from .database import load_chroma_client
@@ -62,6 +76,7 @@ def synthesize_patient(
     seed: int | None = None,
     generator: str = "gpt-5",
     verifier: str = "gpt-5",
+    record_type: str = "ehr-outpatient",
 ) -> Patient:
     """
     Generates a synthetic longitudinal patient record for an individual patient.
@@ -78,6 +93,7 @@ def synthesize_patient(
         seed: Optional seed for reproducibility
         generator: Model name for generation (default: "gpt-5")
         verifier: Model name for verification (default: "gpt-5")
+        record_type: Type of record ("claims", "ehr-inpatient", "ehr-outpatient") (default: "ehr-outpatient")
 
     Returns:
         Generated patient record as MEDS DataSchema table
@@ -90,8 +106,13 @@ def synthesize_patient(
 
     print(f"Generating record using: {generator}")
 
+    # Sample length info
+    csv_path = _get_csv_path(record_type)
+    total, unique = sample_total_and_unique(csv_path, 1)[0]
+    individual_description = positive + f" The record should have approximately {total} total codes with {unique} unique codes."
+
     # Step 1: Generate tuples with LLM
-    prompt = GENERATION_TEMPLATE.render(individual_description=positive)
+    prompt = GENERATION_TEMPLATE.render(individual_description=individual_description, record_type=record_type)
     response = client.chat.completions.create(
         model=generator,
         messages=[{"role": "user", "content": prompt}],
@@ -301,8 +322,13 @@ def _handle_generation_stage(
     batch_requests = []
 
     for cohort_idx, sampled in enumerate(state["sampled_descriptions"]):
-        for patient_id, desc in sampled.items():
-            prompt = GENERATION_TEMPLATE.render(individual_description=desc)
+        spec = state["cohort_specs"][cohort_idx]
+        record_type = spec.get("record_type", "ehr-outpatient")
+        csv_path = _get_csv_path(record_type)
+        total_and_uniques = sample_total_and_unique(csv_path, spec["count"])
+        for (patient_id, desc), (total, unique) in zip(sampled.items(), total_and_uniques):
+            modified_desc = desc + f" The record should have approximately {total} total codes with {unique} unique codes."
+            prompt = GENERATION_TEMPLATE.render(individual_description=modified_desc, record_type=record_type)
             salt = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
 
             batch_requests.append(
@@ -310,12 +336,12 @@ def _handle_generation_stage(
                     "custom_id": f"cohort_{cohort_idx}_patient_{patient_id}_{salt}",
                     "method": "POST",
                     "url": "/v1/chat/completions",
-                     "body": {
-                         "model": state.get("generator"),
-                         "messages": [{"role": "user", "content": prompt}],
-                        "response_format": {"type": "json_schema", "json_schema": UncodedPatient.model_json_schema()},
-                        "temperature": 1.0,
-                    },
+                      "body": {
+                          "model": state.get("generator"),
+                          "messages": [{"role": "user", "content": prompt}],
+                         "response_format": {"type": "json_schema", "json_schema": UncodedPatient.model_json_schema()},
+                         "temperature": 1.0,
+                     },
                 }
             )
 
