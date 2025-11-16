@@ -8,18 +8,19 @@ import pyarrow as pa
 class CodeSystem(str, Enum):
     """Enumeration of supported medical vocabulary systems."""
 
-    SNOMED = "snomed"
-    RXNORM = "rxnorm"
+    SNOMED = "snomed" # not in claims
+    RXNORM = "rxnorm" # not in claims
     ICD9_PROC = "icd9_proc"
-    PHECODE = "phecode"
-    LNC = "lnc"
+    LNC = "lnc" # not in claims
     ICD10_PROC = "icd10_proc"
     CPT = "cpt"
-    ATC = "atc"
     ICD9 = "icd9"
-    UMLS_CUI = "umls_cui"
-    NDC = "ndc"
+    NDC = "ndc" # not in ehr
     ICD10 = "icd10"
+    # not in EHR/claims data
+    # PHECODE = "phecode"
+    # ATC = "atc"
+    # UMLS_CUI = "umls_cui"
 
 
 class Event(BaseModel):
