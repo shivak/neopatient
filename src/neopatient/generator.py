@@ -608,9 +608,10 @@ def _match_codes(
     all_descriptions = []
     systems = []
     for record in cohort_records:
-        for row in record.root:
-            systems.append(row.code_system)
-            all_descriptions.append(row.code_desc)
+        for time_str, events in record.root.items():
+            for row in events:
+                systems.append(row.code_system)
+                all_descriptions.append(row.code_desc)
 
     queries = list(zip(systems, all_descriptions))
 
@@ -623,19 +624,43 @@ def _match_codes(
     idx = 0
     for record, patient_id in zip(cohort_records, patient_ids):
         rows = []
-        for row in record.root:
-            code, matched_desc = batch_results[idx]
-            rows.append(
-                {
+        first_entry = True
+        for time_str, events in record.root.items():
+            if first_entry:
+                # Handle birthday: Add MEDS_BIRTH row with time_str, and static events with time=None
+                rows.append({
                     "subject_id": patient_id,
-                    "time": row.time,
-                    "code": code,
-                    "numeric_value": row.numeric_value,
-                    "unit": row.unit,
-                    "text_value": row.text_value,
-                }
-            )
-            idx += 1
+                    "time": time_str,  # Birthday time for MEDS_BIRTH
+                    "code": "MEDS_BIRTH",
+                    "numeric_value": None,
+                    "unit": None,
+                    "text_value": None,
+                })
+                for row in events:
+                    code, matched_desc = batch_results[idx]
+                    rows.append({
+                        "subject_id": patient_id,
+                        "time": None,  # Untimestamped for static
+                        "code": code,
+                        "numeric_value": row.numeric_value,
+                        "unit": row.unit,
+                        "text_value": row.text_value,
+                    })
+                    idx += 1
+                first_entry = False
+            else:
+                # Regular events with time_str
+                for row in events:
+                    code, matched_desc = batch_results[idx]
+                    rows.append({
+                        "subject_id": patient_id,
+                        "time": time_str,
+                        "code": code,
+                        "numeric_value": row.numeric_value,
+                        "unit": row.unit,
+                        "text_value": row.text_value,
+                    })
+                    idx += 1
         table = pa.Table.from_pylist(rows, schema=DataSchema.schema)
         cohort.append(table)
 

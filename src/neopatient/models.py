@@ -24,8 +24,7 @@ class CodeSystem(str, Enum):
 
 
 class Event(BaseModel):
-    """Individual patient event/measurement record."""
-    time: str | None = Field(description="ISO timestamp or null for static measurements")
+    """Individual patient event/measurement record (without time, as time is the dict key)."""
     code_system: CodeSystem = Field(description="vocabulary system for this code")
     code_desc: str = Field(description="brief textual description of the code/measurement/event")
     numeric_value: float | None = Field(description="numeric result if applicable")
@@ -33,8 +32,8 @@ class Event(BaseModel):
     text_value: str | None = Field(description="text result if applicable")
 
 
-class UncodedPatient(RootModel[List[Event]]):
-    """List of uncoded patient events before code matching."""
+class UncodedPatient(RootModel[Dict[str, List[Event]]]):
+    """Ordered dictionary of times (strings, '' for static) to lists of events."""
     pass
 
 
