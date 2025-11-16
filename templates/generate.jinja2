@@ -9,6 +9,8 @@ Generate a longitudinal record for this specific synthetic patient: {{individual
 * text_value: text result if applicable, else null (reserved for text measurements)
 * include static measurements for gender, race, and ethnicity
 * begin the trajectory on their birthday with birth-related descriptions
+* the record should span from {{start_date}} to {{end_date}} (ISO timestamps)
+* aim for an average of {{avg_codes_per_time}} codes per timestamp, but allow substantial variation
 * this is {% if record_type == 'claims' %}a claims{% elif record_type == 'ehr-inpatient' %}an EHR inpatient{% elif record_type == 'ehr-outpatient' %}an EHR outpatient{% endif %} record. Only use code systems appropriate for this record type (research-only systems like phecode, atc, and umls_cui are prohibited).
 
 --- example output ---

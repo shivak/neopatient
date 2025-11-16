@@ -19,6 +19,7 @@ def main():
     single_parser.add_argument("--generator", default="gpt-5-nano", help="Model name for generation")
     single_parser.add_argument("--verifier", default="gpt-5", help="Model name for verification")
     single_parser.add_argument("--record-type", default="ehr-outpatient", choices=["claims", "ehr-inpatient", "ehr-outpatient"], help="Type of record")
+    single_parser.add_argument("--end-date", default=None, help="End date for the record (ISO string), defaults to current time")
 
     # Cohort subcommand
     cohort_parser = subparsers.add_parser('cohort', help='Generate a cohort of patient records')
@@ -63,7 +64,8 @@ def main():
                 seed=args.seed,
                 generator=args.generator,
                 verifier=args.verifier,
-                record_type=args.record_type
+                record_type=args.record_type,
+                end_date=args.end_date
             )
             logger.info("Patient record generated")
             pa.parquet.write_table(record, args.out)

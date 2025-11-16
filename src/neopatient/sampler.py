@@ -3,6 +3,7 @@ import os
 from typing import Dict
 import openai
 import jinja2
+from .models import PatientRecipe
 
 # Get the directory of the current file to construct template path
 _current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -16,26 +17,28 @@ def sample_individual_descriptions(
     positive: str,
     negative: str,
     n: int,
+    duration: str,
     sampler_model: str = "gpt-5"
-) -> Dict[int, str]:
+) -> Dict[int, PatientRecipe]:
     """
-    Samples individual patient descriptions that satisfy cohort criteria.
+    Samples individual patient recipes that satisfy cohort criteria.
 
-    Uses LLM to generate n self-contained descriptions, each including what the individual
-    should and should not be like, along with unique patient IDs.
+    Uses LLM to generate n self-contained recipes, each including start_date, end_date, and description,
+    constrained by the provided duration.
 
     Args:
         positive: Positive cohort description
         negative: Negative anti-cohort description
         n: Number of patients to sample
+        duration: Approximate duration for each patient's record (e.g., "1000 days")
         sampler_model: Model name for sampling (default: "gpt-5")
 
     Returns:
-        Dict of {patient_id: individual_description}
+        Dict of {patient_id: PatientRecipe}
     """
     client = openai.OpenAI()  # Assume API key is set via environment
 
-    prompt = SAMPLE_TEMPLATE.render(positive_cohort=positive, negative_cohort=negative, n=n)
+    prompt = SAMPLE_TEMPLATE.render(positive_cohort=positive, negative_cohort=negative, n=n, duration=duration)
     response = client.chat.completions.create(
         model=sampler_model,
         messages=[{"role": "user", "content": prompt}],
@@ -51,4 +54,9 @@ def sample_individual_descriptions(
     if len(sampled_dict) != n:
         raise ValueError(f"Expected {n} samples, got {len(sampled_dict)}")
 
-    return sampled_dict
+    # Parse to PatientRecipe
+    result = {}
+    for key, value in sampled_dict.items():
+        result[int(key)] = PatientRecipe.model_validate(value)
+
+    return result

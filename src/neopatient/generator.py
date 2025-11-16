@@ -6,6 +6,7 @@ import sys
 import time
 from typing import Dict, List, Union, Any, Tuple
 import pathlib
+import datetime
 import openai
 import jinja2
 import chromadb
@@ -15,7 +16,7 @@ import pyarrow as pa
 from sentence_transformers import SentenceTransformer
 from huggingface_hub import snapshot_download
 from .matcher import batch_find_best_matching_codes
-from .models import UncodedPatient, VerificationResponse, Event, State, Patient, Cohort
+from .models import UncodedPatient, VerificationResponse, Event, State, Patient, Cohort, PatientRecipe
 from .sampler import sample_individual_descriptions
 from meds.schema import DataSchema
 
@@ -45,11 +46,11 @@ def _get_csv_path(record_type: str) -> str:
         return os.path.join(_project_root, "stats", "ehr-outpatient.csv")
 
 
-def sample_total_and_unique(csv_path: str, n: int) -> List[Tuple[int, int]]:
-    """Sample n (total_codes, unique_codes) pairs with replacement from CSV."""
+def sample_patient_stats(csv_path: str, n: int) -> List[Dict[str, Any]]:
+    """Sample n rows with replacement from CSV, returning list of dicts."""
     df = pd.read_csv(csv_path)
-    pairs = list(zip(df['len'], df['uniqs']))
-    return random.choices(pairs, k=n)
+    sampled_df = df.sample(n=n, replace=True)
+    return sampled_df.to_dict('records')
 
 
 def _resolve_chroma_client(chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None]) -> chromadb.ClientAPI:
@@ -77,6 +78,7 @@ def synthesize_patient(
     generator: str = "gpt-5",
     verifier: str = "gpt-5",
     record_type: str = "ehr-outpatient",
+    end_date: str | None = None,
 ) -> Patient:
     """
     Generates a synthetic longitudinal patient record for an individual patient.
@@ -94,6 +96,7 @@ def synthesize_patient(
         generator: Model name for generation (default: "gpt-5")
         verifier: Model name for verification (default: "gpt-5")
         record_type: Type of record ("claims", "ehr-inpatient", "ehr-outpatient") (default: "ehr-outpatient")
+        end_date: End date for the record (ISO string), defaults to current time
 
     Returns:
         Generated patient record as MEDS DataSchema table
@@ -106,13 +109,22 @@ def synthesize_patient(
 
     print(f"Generating record using: {generator}")
 
-    # Sample length info
+    # Sample stats
     csv_path = _get_csv_path(record_type)
-    total, unique = sample_total_and_unique(csv_path, 1)[0]
-    individual_description = positive + f" The record should have approximately {total} total codes with {unique} unique codes."
+    stat = sample_patient_stats(csv_path, 1)[0]
+    total = stat['total_codes']
+    unique = stat['unique_codes']
+    duration = stat['duration']
+    num_times = stat['num_times']
+    avg_codes_per_time = stat['avg_codes_per_time']
+    if end_date is None:
+        end_date = datetime.datetime.now().isoformat()
+    days = int(duration.split()[0])
+    start_date = (datetime.datetime.fromisoformat(end_date) - datetime.timedelta(days=days)).isoformat()
+    individual_description = positive
 
     # Step 1: Generate tuples with LLM
-    prompt = GENERATION_TEMPLATE.render(individual_description=individual_description, record_type=record_type)
+    prompt = GENERATION_TEMPLATE.render(individual_description=individual_description, record_type=record_type, start_date=start_date, end_date=end_date, avg_codes_per_time=avg_codes_per_time)
     response = client.chat.completions.create(
         model=generator,
         messages=[{"role": "user", "content": prompt}],
@@ -292,7 +304,7 @@ def synthesize_cohort_with_state_file(
 def _handle_sampling_stage(
     client: openai.OpenAI, state: State
 ) -> Union[List[Cohort], State]:
-    """Sample individual patient descriptions for each cohort using the sampler LLM."""
+    """Sample individual patient recipes for each cohort using the sampler LLM."""
     if state["sampled_descriptions"]:
         # Already sampled, move to generation
         state["stage"] = "generation"
@@ -300,8 +312,12 @@ def _handle_sampling_stage(
 
     # Sample for each cohort
     for spec in state["cohort_specs"]:
+        record_type = spec.get("record_type", "ehr-outpatient")
+        csv_path = _get_csv_path(record_type)
+        stats = sample_patient_stats(csv_path, spec["count"])
+        duration = stats[0]['duration']  # assuming same duration for cohort
         sampled = sample_individual_descriptions(
-            spec["positive"], spec["negative"], spec["count"], state["sampler"]
+            spec["positive"], spec["negative"], spec["count"], duration, state["sampler"]
         )
         state["sampled_descriptions"].append(sampled)
 
@@ -325,10 +341,13 @@ def _handle_generation_stage(
         spec = state["cohort_specs"][cohort_idx]
         record_type = spec.get("record_type", "ehr-outpatient")
         csv_path = _get_csv_path(record_type)
-        total_and_uniques = sample_total_and_unique(csv_path, spec["count"])
-        for (patient_id, desc), (total, unique) in zip(sampled.items(), total_and_uniques):
-            modified_desc = desc + f" The record should have approximately {total} total codes with {unique} unique codes."
-            prompt = GENERATION_TEMPLATE.render(individual_description=modified_desc, record_type=record_type)
+        stats = sample_patient_stats(csv_path, spec["count"])
+        for (patient_id, pr), stat in zip(sampled.items(), stats):
+            total = stat['total_codes']
+            unique = stat['unique_codes']
+            avg_codes_per_time = stat['avg_codes_per_time']
+            individual_description = pr.description
+            prompt = GENERATION_TEMPLATE.render(individual_description=individual_description, record_type=record_type, start_date=pr.start_date.isoformat(), end_date=pr.end_date.isoformat(), avg_codes_per_time=avg_codes_per_time)
             salt = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
 
             batch_requests.append(
@@ -551,7 +570,7 @@ def _download_batch_results(client: openai.OpenAI, file_id: str) -> List[Dict]:
 
 
 def _parse_generation_results(
-    results: List[Dict], sampled_descriptions: List[Dict[int, str]]
+    results: List[Dict], sampled_descriptions: List[Dict[int, PatientRecipe]]
 ) -> tuple[List[List[UncodedPatient]], List[List[int]]]:
     """Parse generation results and organize by cohort."""
     cohort_records = [[] for _ in sampled_descriptions]

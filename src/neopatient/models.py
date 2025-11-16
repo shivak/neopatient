@@ -1,7 +1,8 @@
 from typing import List, Union, TypedDict, Dict, Any
 from enum import Enum
 import pathlib
-from pydantic import BaseModel, RootModel, Field
+from datetime import datetime
+from pydantic import BaseModel, RootModel, Field, model_validator
 import pyarrow as pa
 
 
@@ -50,6 +51,19 @@ class VerificationResponse(BaseModel):
     criticism: str
 
 
+class PatientRecipe(BaseModel):
+    """Recipe for generating a patient record, including dates and description."""
+    start_date: datetime
+    end_date: datetime
+    description: str
+
+    @model_validator(mode='after')
+    def validate_dates(self):
+        if self.start_date >= self.end_date:
+            raise ValueError("start_date must be before end_date")
+        return self
+
+
 class State(TypedDict, total=False):
     stage: str
     cohort_specs: List[Dict[str, Any]]
@@ -58,7 +72,7 @@ class State(TypedDict, total=False):
     generator: str
     verifier: str
     sampler: str
-    sampled_descriptions: List[Dict[int, str]]
+    sampled_descriptions: List[Dict[int, PatientRecipe]]
     generation_tickets: List[str]
     generated_records: List[List[UncodedPatient]]
     verification_tickets: List[str]
