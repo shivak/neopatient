@@ -40,9 +40,9 @@ VERIFICATION_TEMPLATE = load_template(_verify_template_path)
 
 def _get_csv_path(record_type: str) -> str:
     if record_type == "ehr-inpatient":
-        return os.path.join(_project_root, "data", "ehr-inpatient.csv")
+        return os.path.join(_project_root, "stats", "ehr-inpatient.csv")
     else:
-        return os.path.join(_project_root, "data", "ehr-outpatient.csv")
+        return os.path.join(_project_root, "stats", "ehr-outpatient.csv")
 
 
 def sample_total_and_unique(csv_path: str, n: int) -> List[Tuple[int, int]]:
