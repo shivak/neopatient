@@ -16,7 +16,7 @@ import pyarrow as pa
 from sentence_transformers import SentenceTransformer
 from huggingface_hub import snapshot_download
 from .matcher import batch_find_best_matching_codes
-from .models import UncodedPatient, VerificationResponse, Event, State, Patient, Cohort, PatientRecipe
+from .models import UncodedPatient, VerificationResponse, Event, State, Patient, Cohort, PatientRecipe, GenerationResponse
 from .sampler import sample_individual_descriptions
 from meds.schema import DataSchema
 
@@ -131,14 +131,17 @@ def synthesize_patient(
     response = client.chat.completions.create(
         model=generator,
         messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_schema", "json_schema": UncodedPatient.model_json_schema()},
+        response_format={"type": "json_schema", "json_schema": GenerationResponse.model_json_schema()},
         #        seed=seed,
         temperature=0.7,
     )
     content = response.choices[0].message.content
     if content is None:
         raise ValueError("LLM response content is None")
-    record_data = UncodedPatient.model_validate_json(content)
+    generation_response = GenerationResponse.model_validate_json(content)
+    if not generation_response.finished:
+        raise ValueError("Generation not finished, discarding incomplete record")
+    record_data = generation_response.records
     # Step 2: Match codes and create DataSchema
     record = _match_codes([record_data], [patient_id], chroma_client)[0]
 
@@ -366,7 +369,7 @@ def _handle_generation_stage(
                       "body": {
                           "model": state.get("generator"),
                           "messages": [{"role": "user", "content": prompt}],
-                         "response_format": {"type": "json_schema", "json_schema": UncodedPatient.model_json_schema()},
+                          "response_format": {"type": "json_schema", "json_schema": GenerationResponse.model_json_schema()},
                          "temperature": 1.0,
                      },
                 }
@@ -589,12 +592,12 @@ def _parse_generation_results(
             custom_id = result["custom_id"]
             cohort_idx = int(custom_id.split("_")[1])
             patient_id = int(custom_id.split("_")[3])
-            record_data = UncodedPatient.model_validate_json(
+            generation_response = GenerationResponse.model_validate_json(
                 result["response"]["body"]["choices"][0]["message"]["content"]
             )
-
-            cohort_records[cohort_idx].append(record_data)
-            patient_ids[cohort_idx].append(patient_id)
+            if generation_response.finished:
+                cohort_records[cohort_idx].append(generation_response.records)
+                patient_ids[cohort_idx].append(patient_id)
 
     return cohort_records, patient_ids
 

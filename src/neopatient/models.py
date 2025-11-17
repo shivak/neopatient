@@ -38,6 +38,12 @@ class UncodedPatient(RootModel[Dict[str, List[Event]]]):
     pass
 
 
+class GenerationResponse(BaseModel):
+    """Response from generation LLM with finished flag."""
+    finished: bool = Field(description="Whether the generation is complete")
+    records: UncodedPatient = Field(description="The generated patient records")
+
+
 # Type alias for a single patient's MEDS data table
 type Patient = pa.Table
 
