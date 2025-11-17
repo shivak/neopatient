@@ -1,7 +1,7 @@
 Generate a longitudinal record for this specific synthetic patient: {{individual_description}}
 
 * your output should be a JSON object (ordered by time): {time: [[code_system, code_desc, numeric_value, unit, text_value], ...], ...}
-* time: string key (ISO timestamp to appropriate precision; use patient's birthday for static/person-level measurements)
+* time: string key (ISO timestamp to appropriate precision; use date precision (YYYY-MM-DD) for claims and EHR outpatient, datetime for EHR inpatient; use patient's birthday for static/person-level measurements)
 * code_system: the vocabulary system for this code (must be one of: {% if record_type == 'claims' %}icd9_proc, icd10_proc, cpt, icd9, ndc, icd10{% elif record_type in ['ehr-inpatient', 'ehr-outpatient'] %}snomed, rxnorm, icd9_proc, lnc, icd10_proc, cpt, icd9, icd10{% endif %})
 * code_desc: brief textual description of the measurement/event (not the code itself)
 * numeric_value: numeric result if applicable, else null
@@ -27,13 +27,25 @@ Generate a longitudinal record for this specific synthetic patient: {{individual
     ["icd10", "Essential (primary) hypertension", null, null, null]
   ]
 }
-{% elif record_type in ['ehr-inpatient', 'ehr-outpatient'] %}
+{% elif record_type == 'ehr-inpatient' %}
 {
   "2000-05-15T14:20": [
     ["snomed", "Gender (Female)", null, null, null],
     ["snomed", "Race (White)", null, null, null]
   ],
   "2025-10-05T09:30": [
+    ["lnc", "Platelets [#/volume] in Blood", 4500.0, "/uL", null],
+    ["lnc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL", null],
+    ["icd10", "Essential (primary) hypertension", null, null, null]
+  ]
+}
+{% elif record_type == 'ehr-outpatient' %}
+{
+  "2000-05-15": [
+    ["snomed", "Gender (Female)", null, null, null],
+    ["snomed", "Race (White)", null, null, null]
+  ],
+  "2025-10-05": [
     ["lnc", "Platelets [#/volume] in Blood", 4500.0, "/uL", null],
     ["lnc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL", null],
     ["icd10", "Essential (primary) hypertension", null, null, null]

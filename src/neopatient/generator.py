@@ -121,6 +121,9 @@ def synthesize_patient(
         end_date = datetime.datetime.now().isoformat()
     days = int(duration.split()[0])
     start_date = (datetime.datetime.fromisoformat(end_date) - datetime.timedelta(days=days)).isoformat()
+    if record_type in ["claims", "ehr-outpatient"]:
+        start_date = start_date.split('T')[0]  # Truncate to YYYY-MM-DD
+        end_date = end_date.split('T')[0]      # Truncate to YYYY-MM-DD
     individual_description = positive
 
     # Step 1: Generate tuples with LLM
@@ -347,7 +350,12 @@ def _handle_generation_stage(
             unique = stat['unique_codes']
             avg_codes_per_time = stat['avg_codes_per_time']
             individual_description = pr.description
-            prompt = GENERATION_TEMPLATE.render(individual_description=individual_description, record_type=record_type, start_date=pr.start_date.isoformat(), end_date=pr.end_date.isoformat(), avg_codes_per_time=avg_codes_per_time)
+            start_date_str = pr.start_date.isoformat()
+            end_date_str = pr.end_date.isoformat()
+            if record_type in ["claims", "ehr-outpatient"]:
+                start_date_str = start_date_str.split('T')[0]  # Truncate to YYYY-MM-DD
+                end_date_str = end_date_str.split('T')[0]      # Truncate to YYYY-MM-DD
+            prompt = GENERATION_TEMPLATE.render(individual_description=individual_description, record_type=record_type, start_date=start_date_str, end_date=end_date_str, avg_codes_per_time=avg_codes_per_time)
             salt = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
 
             batch_requests.append(
