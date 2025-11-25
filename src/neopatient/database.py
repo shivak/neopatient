@@ -12,15 +12,13 @@ from .embed import Embed
 import os
 
 
-async def setup_databases(
-    parquet_path: str, embedder: Embed, chroma_db_path: str = "clinprime_chroma"
-):
+async def create_database(parquet_path: str, embedder: Embed, db_dir: str):
     """
     Initialize ChromaDB databases for each coding system from a parquet file.
 
     Args:
         parquet_path (str): Path to the clinprime_mapping.parquet file
-        chroma_db_path (str): Path to the ChromaDB database directory
+        db_dir (str): Path to the ChromaDB database directory
         embedder: Embedder function to use for creating embeddings
 
     Raises:
@@ -34,7 +32,7 @@ async def setup_databases(
 
     # Initialize ChromaDB client with persistent storage
     settings = Settings(anonymized_telemetry=False)
-    client = chromadb.PersistentClient(path=chroma_db_path, settings=settings)
+    client = chromadb.PersistentClient(path=db_dir, settings=settings)
 
     for system in CodeSystem:
         # Delete existing collection if it exists
@@ -60,7 +58,7 @@ async def setup_databases(
                 break
             med_codes = chunk["med_code"].to_pylist()
             descs = chunk["desc"].to_pylist()
-            
+
             embeddings = []
             async for batch in embedder(descs):
                 embeddings.extend(batch)
@@ -76,13 +74,13 @@ async def setup_databases(
 
 
 def load_chroma_client(
-    chroma_db_path: str = "clinprime_chroma",
+    db_dir: str,
 ) -> ClientAPI:
     """
     Load a ChromaDB client for the specified database path.
 
     Args:
-        chroma_db_path (str): Path to the ChromaDB database directory
+        db_dir (str): Path to the ChromaDB database directory
 
     Returns:
         chromadb.PersistentClient: The ChromaDB client
@@ -90,12 +88,10 @@ def load_chroma_client(
     Raises:
         FileNotFoundError: If the ChromaDB database directory does not exist
     """
-    if not os.path.exists(chroma_db_path):
-        raise FileNotFoundError(
-            f"ChromaDB database not found at path: {chroma_db_path}"
-        )
+    if not os.path.exists(db_dir):
+        raise FileNotFoundError(f"ChromaDB database not found at path: {db_dir}")
     settings = Settings(anonymized_telemetry=False)
-    return chromadb.PersistentClient(path=chroma_db_path, settings=settings)
+    return chromadb.PersistentClient(path=db_dir, settings=settings)
 
 
 def resolve_chroma_client(

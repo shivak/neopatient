@@ -30,7 +30,7 @@ async def _main():
         "--seed", type=int, default=None, help="Seed for reproducibility"
     )
     single_parser.add_argument(
-        "--chroma_db_path",
+        "--db_dir",
         default=None,
         help="Path to ChromaDB database directory, or None to download from Hugging Face",
     )
@@ -82,7 +82,7 @@ async def _main():
         "--seed", type=int, default=None, help="Seed for reproducibility"
     )
     cohort_parser.add_argument(
-        "--chroma_db_path",
+        "--db_dir",
         default=None,
         help="Path to ChromaDB database directory, or None to download from Hugging Face",
     )
@@ -136,7 +136,7 @@ async def _main():
     logger = logging.getLogger(__name__)
 
     # Set ChromaDB parameter
-    chroma_db = pathlib.Path(args.chroma_db_path) if args.chroma_db_path else None
+    chroma_db = pathlib.Path(args.db_dir) if args.db_dir else None
 
     if args.command == "single":
         try:
