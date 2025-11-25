@@ -454,8 +454,8 @@ async def _handle_check_generation_stage(
             results = _download_batch_results(client, batch_output)
 
             # Parse generation results
-            state["generated_records"], state["patient_ids"] = (
-                _parse_generation_results(results, state["sampled_descriptions"])
+            state["generated_records"] = _parse_generation_results(
+                results, state["sampled_descriptions"]
             )
 
             # Move to matching stage
@@ -485,12 +485,8 @@ async def _handle_matching_stage(
 
     # Apply code matching to all generated records
     state["coded_cohorts"] = []
-    for cohort_records, cohort_patient_ids in zip(
-        state["generated_records"], state["patient_ids"]
-    ):
-        matched = await _match_codes(
-            cohort_records, cohort_patient_ids, chroma_client, embedder
-        )
+    for cohort_dict in state["generated_records"]:
+        matched = await _match_codes(cohort_dict, chroma_client, embedder)
         state["coded_cohorts"].append(matched)
 
     # Start verification stage
@@ -661,10 +657,9 @@ async def _download_batch_results(client: AsyncOpenAI, file_id: str) -> List[Dic
 
 def _parse_generation_results(
     results: List[Dict], sampled_descriptions: List[Dict[int, PatientRecipe]]
-) -> tuple[List[List[UncodedPatient]], List[List[int]]]:
+) -> List[Dict[int, UncodedPatient]]:
     """Parse generation results and organize by cohort."""
-    cohort_records = [[] for _ in sampled_descriptions]
-    patient_ids = [[] for _ in sampled_descriptions]
+    cohort_records = [{} for _ in sampled_descriptions]
 
     for result in results:
         if result.get("response", {}).get("status_code") == 200:
@@ -675,10 +670,9 @@ def _parse_generation_results(
                 result["response"]["body"]["choices"][0]["message"]["content"]
             )
             if generation_response.finished:
-                cohort_records[cohort_idx].append(generation_response.records)
-                patient_ids[cohort_idx].append(patient_id)
+                cohort_records[cohort_idx][patient_id] = generation_response.records
 
-    return cohort_records, patient_ids
+    return cohort_records
 
 
 def _parse_verification_results(
@@ -709,25 +703,21 @@ def _parse_verification_results(
 
 
 async def _match_codes(
-    cohort_records: List[UncodedPatient],
-    patient_ids: List[int],
+    patients: Dict[int, UncodedPatient],
     chroma_client: ClientAPI,
     embedder: Embed,
 ) -> Cohort:
     """Match code descriptions to standardized codes using ChromaDB and return list of patient records."""
-    if not cohort_records:
+    if not patients:
         return []
 
     # Collect all descriptions to match
-    all_descriptions = []
-    systems = []
-    for record in cohort_records:
-        for time_str, events in record.root.items():
-            for row in events:
-                systems.append(row.code_system)
-                all_descriptions.append(row.code_desc)
-
-    queries = list(zip(systems, all_descriptions))
+    queries = [
+        (row.code_system, row.code_desc)
+        for record in patients.values()
+        for time_str, events in record.root.items()
+        for row in events
+    ]
 
     # Perform batch matching
     batch_results = await match_codes(queries, chroma_client, embedder)
@@ -735,7 +725,7 @@ async def _match_codes(
     # Build tables per patient
     cohort = []
     idx = 0
-    for record, patient_id in zip(cohort_records, patient_ids):
+    for patient_id, record in patients.items():
         rows = []
         first_entry = True
         for time_str, events in record.root.items():

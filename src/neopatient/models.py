@@ -97,7 +97,7 @@ class State(TypedDict, total=False):
     stage: str
     sampled_descriptions: List[Dict[int, PatientRecipe]]
     generation_tickets: List[str]
-    generated_records: List[List[UncodedPatient]]
+    generated_records: List[Dict[int, UncodedPatient]]
     verification_tickets: List[str]
     verifications: List[List[VerificationResponse]]
     patient_ids: List[List[int]]
