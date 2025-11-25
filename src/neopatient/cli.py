@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import logging
 import pathlib
 import sys
@@ -7,7 +8,7 @@ from neopatient import synthesize_patient, synthesize_cohort_with_state_file
 from neopatient.models import CohortSpec, RecordType
 
 
-def main():
+async def _main():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", help="Subcommands")
 
@@ -119,7 +120,7 @@ def main():
     if args.command == "single":
         try:
             logger.info("Generating patient record...")
-            record = synthesize_patient(
+            record = await synthesize_patient(
                 positive=args.positive,
                 negative=args.negative,
                 patient_id=1,
@@ -147,7 +148,7 @@ def main():
                     record_type=RecordType(args.record_type),
                 )
             ]
-            result = synthesize_cohort_with_state_file(
+            result = await synthesize_cohort_with_state_file(
                 cohort_specs=cohort_specs,
                 chroma_db=chroma_db,
                 generator=args.generator,
@@ -164,6 +165,8 @@ def main():
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
 
+def main():
+    asyncio.run(_main())
 
 if __name__ == "__main__":
     main()
