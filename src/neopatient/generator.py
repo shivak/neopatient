@@ -9,13 +9,14 @@ import pathlib
 import datetime
 from openai import AsyncOpenAI
 import jinja2
-import chromadb
+
 from chromadb.api import ClientAPI
 import pandas as pd
 import pyarrow as pa
 from sentence_transformers import SentenceTransformer
-from huggingface_hub import snapshot_download
-from .matcher import batch_find_best_matching_codes
+
+from .matcher import match_codes
+from .database import resolve_chroma_client
 from .models import (
     UncodedPatient,
     VerificationResponse,
@@ -62,29 +63,11 @@ def sample_patient_stats(csv_path: str, n: int) -> List[Dict[str, Any]]:
     return sampled_df.to_dict("records")
 
 
-def _resolve_chroma_client(
-    chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None],
-) -> chromadb.ClientAPI:
-    """Resolve chroma_db parameter to a ChromaDB client."""
-    from .database import load_chroma_client
-
-    if chroma_db is None:
-        # Download pre-generated ChromaDB files from Hugging Face
-        chroma_path = snapshot_download("cab-harvard/neopatient")
-        return load_chroma_client(chroma_path)
-    elif isinstance(chroma_db, pathlib.Path):
-        return load_chroma_client(str(chroma_db))
-    elif isinstance(chroma_db, chromadb.ClientAPI):
-        return chroma_db
-    else:
-        raise ValueError("chroma_db must be a ChromaDB client, a pathlib.Path, or None")
-
-
 async def synthesize_patient(
     positive: str,
     negative: str,
     patient_id: int,
-    chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None],
+    chroma_db: Union[ClientAPI, pathlib.Path, None],
     seed: int | None = None,
     generator: str = "gpt-5",
     verifier: str = "gpt-5",
@@ -115,7 +98,7 @@ async def synthesize_patient(
     Raises:
         ValueError: If the generated record does not satisfy the cohort criteria
     """
-    chroma_client = _resolve_chroma_client(chroma_db)
+    chroma_client = resolve_chroma_client(chroma_db)
     client = AsyncOpenAI()  # Assume API key is set via environment
 
     print(f"Generating record using: {generator}")
@@ -192,7 +175,7 @@ async def synthesize_patient(
 
 async def synthesize_cohort(
     cohort_specs: List[CohortSpec],
-    chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None],
+    chroma_db: Union[ClientAPI, pathlib.Path, None],
     epsilon: float = 0.2,
     state: State | None = None,
     generator: str = "gpt-5",
@@ -226,7 +209,7 @@ async def synthesize_cohort(
         - List of cohorts, where each cohort is a list of patient records
         - State dictionary for resuming if batch is not ready yet
     """
-    chroma_db = _resolve_chroma_client(chroma_db)
+    chroma_db = resolve_chroma_client(chroma_db)
     client = AsyncOpenAI()
 
     # If resuming from state, use existing state
@@ -280,7 +263,7 @@ async def synthesize_cohort(
 
 async def synthesize_cohort_with_state_file(
     cohort_specs: List[CohortSpec],
-    chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None],
+    chroma_db: Union[ClientAPI, pathlib.Path, None],
     generator: str = "gpt-5-nano",
     verifier: str = "gpt-5",
     sampler: str = "gpt-5",
@@ -463,7 +446,7 @@ async def _handle_matching_stage(
     client: AsyncOpenAI, state: State
 ) -> Union[List[Cohort], State]:
     """Handle code matching stage and start verification."""
-    chroma_client = _resolve_chroma_client(state["chroma_db"])
+    chroma_client = resolve_chroma_client(state["chroma_db"])
 
     # Apply code matching to all generated records
     state["coded_cohorts"] = []
@@ -691,7 +674,7 @@ def _match_codes(
 
     # Perform batch matching
     model = SentenceTransformer("abhinand/MedEmbed-large-v0.1")
-    batch_results = batch_find_best_matching_codes(queries, chroma_client, model)
+    batch_results = match_codes(queries, chroma_client, model)
 
     # Build tables per patient
     cohort = []

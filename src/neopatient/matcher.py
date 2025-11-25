@@ -1,57 +1,22 @@
 from sentence_transformers import SentenceTransformer
-import chromadb
+from chromadb.api import ClientAPI
 from typing import List, Tuple, Dict
+from .models import CodeSystem
 
 
-def find_best_matching_code(
-    coding_system: str,
-    description: str,
-    chroma_client: chromadb.PersistentClient,
-    model: SentenceTransformer,
-) -> tuple[str | None, str | None]:
-    """
-    Find the best matching medical code and description for a given coding system and description.
-
-    Args:
-        coding_system (str): The medical coding system (e.g., 'snomed', 'rxnorm', 'icd10_proc')
-        description (str): The description to match against
-        chroma_client (chromadb.PersistentClient): The ChromaDB client
-
-    Returns:
-        tuple[str, str]: The best matching medical code and its associated description (first 256 chars)
-    """
-
-    try:
-        collection = chroma_client.get_collection(coding_system)
-    except Exception:
-        raise ValueError(f"No collection found for coding system: {coding_system}")
-
-    query_desc = description[:256]
-    query_emb = model.encode([query_desc], normalize_embeddings=True)[0].tolist()
-
-    results = collection.query(
-        query_embeddings=[query_emb], n_results=1, include=["metadatas", "documents"]
-    )
-
-    if results["metadatas"] and results["metadatas"][0]:
-        metadata = results["metadatas"][0][0]
-        return metadata["med_code"], metadata["desc"]
-    return None, None
-
-
-def find_best_matching_codes(
-    coding_system: str,
+def match_codes_in_system(
+    coding_system: CodeSystem,
     descriptions: list[str],
-    chroma_client: chromadb.PersistentClient,
+    chroma_client: ClientAPI,
     model: SentenceTransformer,
 ) -> list[tuple[str, str]]:
     """
     Find the best matching medical codes and descriptions for multiple descriptions in a single batch operation.
 
     Args:
-        coding_system (str): The medical coding system (e.g., 'snomed', 'rxnorm', 'icd10_proc')
+        coding_system (CodeSystem): The medical coding system
         descriptions (List[str]): List of descriptions to match against
-        chroma_client (chromadb.PersistentClient): The ChromaDB client
+        chroma_client (ClientAPI): The ChromaDB client
 
     Returns:
         List[Tuple[str, str]]: List of tuples containing (code, description) for each input description.
@@ -61,7 +26,7 @@ def find_best_matching_codes(
         return []
 
     try:
-        collection = chroma_client.get_collection(coding_system)
+        collection = chroma_client.get_collection(coding_system.value)
     except Exception:
         raise ValueError(f"No collection found for coding system: {coding_system}")
 
@@ -92,9 +57,9 @@ def find_best_matching_codes(
     return matched_results
 
 
-def batch_find_best_matching_codes(
-    queries: List[Tuple[str, str]],
-    chroma_client: chromadb.PersistentClient,
+def match_codes(
+    queries: List[Tuple[CodeSystem, str]],
+    chroma_client: ClientAPI,
     model: SentenceTransformer,
 ) -> List[Tuple[str | None, str | None]]:
     """
@@ -112,19 +77,21 @@ def batch_find_best_matching_codes(
         return []
 
     # Group queries by coding system
-    system_groups: Dict[str, List[Tuple[int, str]]] = {}
+    system_groups: Dict[CodeSystem, List[Tuple[int, str]]] = {}
     for i, (system, desc) in enumerate(queries):
         if system not in system_groups:
             system_groups[system] = []
         system_groups[system].append((i, desc))
 
     # Initialize results list
-    results = [(None, None) for _ in range(len(queries))]
+    results: List[Tuple[str | None, str | None]] = [
+        (None, None) for _ in range(len(queries))
+    ]
 
     # Process each coding system in batch
     for system, system_queries in system_groups.items():
         indices, descriptions = zip(*system_queries)
-        batch_results = find_best_matching_codes(
+        batch_results = match_codes_in_system(
             system, list(descriptions), chroma_client, model
         )
 

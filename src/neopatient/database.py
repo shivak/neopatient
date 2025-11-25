@@ -1,9 +1,12 @@
 import duckdb
 from sentence_transformers import SentenceTransformer
 import chromadb
+from chromadb.api import ClientAPI
 from chromadb.config import Settings
 from chromadb.utils.batch_utils import create_batches
-from typing import cast
+from typing import cast, Union
+import pathlib
+from huggingface_hub import snapshot_download
 
 import os
 
@@ -87,7 +90,7 @@ def setup_databases(parquet_path: str, chroma_db_path: str = "clinprime_chroma")
 
 def load_chroma_client(
     chroma_db_path: str = "clinprime_chroma",
-) -> chromadb.ClientAPI:
+) -> ClientAPI:
     """
     Load a ChromaDB client for the specified database path.
 
@@ -106,3 +109,20 @@ def load_chroma_client(
         )
     settings = Settings(anonymized_telemetry=False)
     return chromadb.PersistentClient(path=chroma_db_path, settings=settings)
+
+
+def resolve_chroma_client(
+    chroma_db: Union[ClientAPI, pathlib.Path, None],
+) -> ClientAPI:
+    """Resolve chroma_db parameter to a ChromaDB client."""
+
+    if chroma_db is None:
+        # Download pre-generated ChromaDB files from Hugging Face
+        chroma_path = snapshot_download("cab-harvard/neopatient")
+        return load_chroma_client(chroma_path)
+    elif isinstance(chroma_db, pathlib.Path):
+        return load_chroma_client(str(chroma_db))
+    elif isinstance(chroma_db, ClientAPI):
+        return chroma_db
+    else:
+        raise ValueError("chroma_db must be a ChromaDB client, a pathlib.Path, or None")
