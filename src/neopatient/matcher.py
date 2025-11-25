@@ -50,7 +50,12 @@ def match_codes_in_system(
             and len(results["metadatas"][i]) > 0
         ):
             metadata = results["metadatas"][i][0]
-            matched_results.append((metadata["med_code"], metadata["desc"]))
+            document = (
+                results["documents"][i][0]
+                if results["documents"] and results["documents"][i]
+                else ""
+            )
+            matched_results.append((metadata["code"], document))
         else:
             matched_results.append((None, None))
 

@@ -7,6 +7,7 @@ from chromadb.utils.batch_utils import create_batches
 from typing import cast, Union
 import pathlib
 from huggingface_hub import snapshot_download
+from .models import CodeSystem
 
 import os
 
@@ -27,11 +28,6 @@ def setup_databases(parquet_path: str, chroma_db_path: str = "clinprime_chroma")
         raise FileNotFoundError(f"Parquet file not found at path: {parquet_path}")
 
     con = duckdb.connect()
-    coding_systems = con.query(
-        "SELECT DISTINCT code_system FROM read_parquet($parquet_path)",
-        params={"parquet_path": parquet_path},
-    ).fetchall()
-    coding_systems = [cast(str, row[0]) for row in coding_systems]
 
     model = SentenceTransformer("abhinand/MedEmbed-large-v0.1")
 
@@ -39,34 +35,31 @@ def setup_databases(parquet_path: str, chroma_db_path: str = "clinprime_chroma")
     settings = Settings(anonymized_telemetry=False)
     client = chromadb.PersistentClient(path=chroma_db_path, settings=settings)
 
-    for system in coding_systems:
+    for system in CodeSystem:
         # Delete existing collection if it exists
         try:
-            client.delete_collection(system)
+            client.delete_collection(system.value)
         except Exception:
             pass  # Collection doesn't exist, which is fine
 
         # Create new collection
         collection = client.create_collection(
-            name=system,
+            name=system.value,
             metadata={"hnsw:space": "cosine"},  # Use cosine similarity
         )
 
         rows = con.query(
             "SELECT med_code, t.desc FROM read_parquet($parquet_path) AS t WHERE code_system = $system",
-            params={"parquet_path": parquet_path, "system": system},
+            params={"parquet_path": parquet_path, "system": system.value},
         ).fetchall()
 
         med_codes = [cast(str, row[0]) for row in rows]
-        descs = [cast(str, row[1])[:256] if row[1] else "" for row in rows]
+        descs = [cast(str, row[1]) if row[1] else "" for row in rows]
         embeddings = model.encode(descs, normalize_embeddings=True)
 
         # Prepare data for ChromaDB
         ids = [f"{system}_{i}" for i in range(len(rows))]
-        metadatas = [
-            {"med_code": med_code, "desc": desc}
-            for med_code, desc in zip(med_codes, descs)
-        ]
+        metadatas = [{"code": med_code} for med_code in med_codes]
 
         # Add documents to collection in batches
         batches = create_batches(
