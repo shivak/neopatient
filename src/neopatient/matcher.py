@@ -23,7 +23,7 @@ def find_best_matching_code(
 
     try:
         collection = chroma_client.get_collection(coding_system)
-    except:
+    except Exception:
         raise ValueError(f"No collection found for coding system: {coding_system}")
 
     query_desc = description[:256]
@@ -62,7 +62,7 @@ def find_best_matching_codes(
 
     try:
         collection = chroma_client.get_collection(coding_system)
-    except:
+    except Exception:
         raise ValueError(f"No collection found for coding system: {coding_system}")
 
     # Prepare all query descriptions (truncate to 256 chars)

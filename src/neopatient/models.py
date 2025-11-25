@@ -1,6 +1,5 @@
-from typing import List, Union, TypedDict, Dict, Any
+from typing import List, TypedDict, Dict, Any
 from enum import Enum
-import pathlib
 from datetime import datetime
 from pydantic import BaseModel, RootModel, Field, model_validator
 import pyarrow as pa

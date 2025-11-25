@@ -40,7 +40,7 @@ def setup_databases(parquet_path: str, chroma_db_path: str = "clinprime_chroma")
         # Delete existing collection if it exists
         try:
             client.delete_collection(system)
-        except:
+        except Exception:
             pass  # Collection doesn't exist, which is fine
 
         # Create new collection

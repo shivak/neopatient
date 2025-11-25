@@ -7,4 +7,4 @@ from .generator import (
     synthesize_cohort_with_state_file,
 )
 
-__all__ = []
+__all__ = ["find_best_matching_code", "setup_databases", "load_chroma_client", "synthesize_patient", "synthesize_cohort", "synthesize_cohort_with_state_file"]
