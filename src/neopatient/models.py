@@ -24,6 +24,21 @@ class CodeSystem(str, Enum):
     # UMLS_CUI = "umls_cui"
 
 
+class RecordType(str, Enum):
+    """Enumeration of supported record types."""
+    EHR_INPATIENT = "ehr-inpatient"
+    EHR_OUTPATIENT = "ehr-outpatient"
+    CLAIMS = "claims"
+
+
+class CohortSpec(BaseModel):
+    """Specification for a cohort of patients."""
+    positive: List[str] = Field(description="List of positive condition codes")
+    negative: List[str] = Field(description="List of negative condition codes")
+    count: int = Field(description="Number of patients to generate")
+    record_type: RecordType = Field(description="Type of record")
+
+
 class Event(BaseModel):
     """Individual patient event/measurement record (without time, as time is the dict key)."""
     code_system: CodeSystem = Field(description="vocabulary system for this code")
@@ -72,7 +87,7 @@ class PatientRecipe(BaseModel):
 
 class State(TypedDict, total=False):
     stage: str
-    cohort_specs: List[Dict[str, Any]]
+    cohort_specs: List[CohortSpec]
     chroma_db: Any
     epsilon: float
     generator: str

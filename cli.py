@@ -4,6 +4,7 @@ import pathlib
 import sys
 import pyarrow as pa
 from neopatient import synthesize_patient, synthesize_cohort_with_state_file
+from neopatient.models import CohortSpec, RecordType
 
 def main():
     parser = argparse.ArgumentParser(description="Neopatient CLI for generating synthetic patient records")
@@ -76,7 +77,7 @@ def main():
     elif args.command == 'cohort':
         try:
             logger.info("Generating patient cohort...")
-            cohort_specs = [{"positive": args.positive, "negative": args.negative, "count": args.size, "record_type": args.record_type}]
+            cohort_specs = [CohortSpec(positive=[args.positive], negative=[args.negative], count=args.size, record_type=RecordType(args.record_type))]
             result = synthesize_cohort_with_state_file(
                 cohort_specs=cohort_specs,
                 chroma_db=chroma_db,

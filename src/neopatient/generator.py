@@ -16,7 +16,7 @@ import pyarrow as pa
 from sentence_transformers import SentenceTransformer
 from huggingface_hub import snapshot_download
 from .matcher import batch_find_best_matching_codes
-from .models import UncodedPatient, VerificationResponse, Event, State, Patient, Cohort, PatientRecipe, GenerationResponse
+from .models import UncodedPatient, VerificationResponse, Event, State, Patient, Cohort, PatientRecipe, GenerationResponse, CohortSpec
 from .sampler import sample_individual_descriptions
 from meds.schema import DataSchema
 
@@ -169,7 +169,7 @@ def synthesize_patient(
 
 
 def synthesize_cohort(
-    cohort_specs: List[Dict[str, Any]],
+    cohort_specs: List[CohortSpec],
     chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None],
     epsilon: float = 0.2,
     state: State | None = None,
@@ -259,7 +259,7 @@ def synthesize_cohort(
 
 
 def synthesize_cohort_with_state_file(
-    cohort_specs: List[Dict[str, Any]],
+    cohort_specs: List[CohortSpec],
     chroma_db: Union[chromadb.ClientAPI, pathlib.Path, None],
     generator: str = "gpt-5-nano",
     verifier: str = "gpt-5",
