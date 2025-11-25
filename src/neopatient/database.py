@@ -1,24 +1,27 @@
 import duckdb
-from sentence_transformers import SentenceTransformer
 import chromadb
 from chromadb.api import ClientAPI
 from chromadb.config import Settings
-from chromadb.utils.batch_utils import create_batches
-from typing import cast, Union
+
+from typing import Union
 import pathlib
 from huggingface_hub import snapshot_download
 from .models import CodeSystem
+from .embed import Embed
 
 import os
 
 
-def setup_databases(parquet_path: str, chroma_db_path: str = "clinprime_chroma"):
+async def setup_databases(
+    parquet_path: str, embedder: Embed, chroma_db_path: str = "clinprime_chroma"
+):
     """
     Initialize ChromaDB databases for each coding system from a parquet file.
 
     Args:
         parquet_path (str): Path to the clinprime_mapping.parquet file
         chroma_db_path (str): Path to the ChromaDB database directory
+        embedder: Embedder function to use for creating embeddings
 
     Raises:
         FileNotFoundError: If the parquet file does not exist at the specified path
@@ -28,8 +31,6 @@ def setup_databases(parquet_path: str, chroma_db_path: str = "clinprime_chroma")
         raise FileNotFoundError(f"Parquet file not found at path: {parquet_path}")
 
     con = duckdb.connect()
-
-    model = SentenceTransformer("abhinand/MedEmbed-large-v0.1")
 
     # Initialize ChromaDB client with persistent storage
     settings = Settings(anonymized_telemetry=False)
@@ -48,34 +49,27 @@ def setup_databases(parquet_path: str, chroma_db_path: str = "clinprime_chroma")
             metadata={"hnsw:space": "cosine"},  # Use cosine similarity
         )
 
-        rows = con.query(
+        results = con.query(
             "SELECT med_code, t.desc FROM read_parquet($parquet_path) AS t WHERE code_system = $system",
             params={"parquet_path": parquet_path, "system": system.value},
-        ).fetchall()
-
-        med_codes = [cast(str, row[0]) for row in rows]
-        descs = [cast(str, row[1]) if row[1] else "" for row in rows]
-        embeddings = model.encode(descs, normalize_embeddings=True)
-
-        # Prepare data for ChromaDB
-        ids = [f"{system}_{i}" for i in range(len(rows))]
-        metadatas = [{"code": med_code} for med_code in med_codes]
-
-        # Add documents to collection in batches
-        batches = create_batches(
-            api=client,
-            ids=ids,
-            documents=descs,
-            embeddings=embeddings.tolist(),
-            metadatas=metadatas,
         )
-        for batch in batches:
-            print(f"Adding batch of size {len(batch[0])}")
+        chunk_size = client.get_max_batch_size()
+        while True:
+            chunk = results.fetch_record_batch(chunk_size=chunk_size)
+            if chunk is None:
+                break
+            med_codes = chunk["med_code"].to_pylist()
+            descs = chunk["desc"].to_pylist()
+            
+            embeddings = []
+            async for batch in embedder(descs):
+                embeddings.extend(batch)
+
+            # Add documents to collection
             collection.add(
-                ids=batch[0],
-                embeddings=batch[1],
-                metadatas=batch[2],
-                documents=batch[3],
+                ids=med_codes,
+                embeddings=embeddings,
+                documents=descs,
             )
 
     con.close()

@@ -4,8 +4,9 @@ import logging
 import pathlib
 import sys
 import pyarrow as pa
-from neopatient import synthesize_patient, synthesize_cohort_with_state_file
-from neopatient.models import CohortSpec, RecordType
+from pyarrow import parquet
+from . import synthesize_patient, synthesize_cohort_with_state_file
+from .models import CohortSpec, RecordType
 
 
 async def _main():
@@ -49,6 +50,16 @@ async def _main():
         "--end-date",
         default=None,
         help="End date for the record (ISO string), defaults to current time",
+    )
+    single_parser.add_argument(
+        "--embedder",
+        default="sentence-transformers/all-MiniLM-L6-v2",
+        help="Embedder model name for code matching",
+    )
+    single_parser.add_argument(
+        "--embedder-args",
+        default="",
+        help="Comma-separated key=value pairs for embedder configuration",
     )
 
     # Cohort subcommand
@@ -101,6 +112,16 @@ async def _main():
         required=True,
         help="Path to state file for resuming batch operations",
     )
+    cohort_parser.add_argument(
+        "--embedder",
+        default="sentence-transformers/all-MiniLM-L6-v2",
+        help="Embedder model name for code matching",
+    )
+    cohort_parser.add_argument(
+        "--embedder-args",
+        default="",
+        help="Comma-separated key=value pairs for embedder configuration",
+    )
 
     args = parser.parse_args()
 
@@ -125,6 +146,8 @@ async def _main():
                 negative=args.negative,
                 patient_id=1,
                 chroma_db=chroma_db,
+                embedder_model=args.embedder,
+                embedder_args=args.embedder_args,
                 seed=args.seed,
                 generator=args.generator,
                 verifier=args.verifier,
@@ -132,7 +155,7 @@ async def _main():
                 end_date=args.end_date,
             )
             logger.info("Patient record generated")
-            pa.parquet.write_table(record, args.out)
+            parquet.write_table(record, args.out)
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
@@ -151,6 +174,8 @@ async def _main():
             result = await synthesize_cohort_with_state_file(
                 cohort_specs=cohort_specs,
                 chroma_db=chroma_db,
+                embedder_model=args.embedder,
+                embedder_args=args.embedder_args,
                 generator=args.generator,
                 verifier=args.verifier,
                 sampler=args.sampler,
@@ -159,14 +184,16 @@ async def _main():
             )
             cohort = result[0]  # list of Patient tables
             big_table = pa.concat_tables(cohort)
-            pa.parquet.write_table(big_table, args.out)
+            parquet.write_table(big_table, args.out)
             logger.info("Cohort generated and written to %s", args.out)
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
 
+
 def main():
     asyncio.run(_main())
+
 
 if __name__ == "__main__":
     main()

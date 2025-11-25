@@ -1,14 +1,14 @@
-from sentence_transformers import SentenceTransformer
 from chromadb.api import ClientAPI
 from typing import List, Tuple, Dict
 from .models import CodeSystem
+from .embed import Embed
 
 
-def match_codes_in_system(
+async def match_codes_in_system(
     coding_system: CodeSystem,
     descriptions: list[str],
     chroma_client: ClientAPI,
-    model: SentenceTransformer,
+    embedder: Embed,
 ) -> list[tuple[str, str]]:
     """
     Find the best matching medical codes and descriptions for multiple descriptions in a single batch operation.
@@ -20,7 +20,6 @@ def match_codes_in_system(
 
     Returns:
         List[Tuple[str, str]]: List of tuples containing (code, description) for each input description.
-                              Returns (None, None) for descriptions that couldn't be matched.
     """
     if not descriptions:
         return []
@@ -30,42 +29,30 @@ def match_codes_in_system(
     except Exception:
         raise ValueError(f"No collection found for coding system: {coding_system}")
 
-    # Prepare all query descriptions (truncate to 256 chars)
-    query_descs = [desc[:256] for desc in descriptions]
-
-    # Encode all descriptions in a single batch
-    query_embs = model.encode(query_descs, normalize_embeddings=True).tolist()
+    # Encode all descriptions using embedder
+    query_embs = []
+    async for batch in embedder(descriptions):
+        query_embs.extend(batch)
 
     # Perform batch search
     results = collection.query(
-        query_embeddings=query_embs, n_results=1, include=["metadatas", "documents"]
+        query_embeddings=query_embs, n_results=1, include=["documents"]
     )
 
     # Process results
     matched_results = []
     for i in range(len(descriptions)):
-        if (
-            results["metadatas"]
-            and results["metadatas"][i]
-            and len(results["metadatas"][i]) > 0
-        ):
-            metadata = results["metadatas"][i][0]
-            document = (
-                results["documents"][i][0]
-                if results["documents"] and results["documents"][i]
-                else ""
-            )
-            matched_results.append((metadata["code"], document))
-        else:
-            matched_results.append((None, None))
+        code = results["ids"][i]
+        document = results["documents"][i][0]
+        matched_results.append((code, document))
 
     return matched_results
 
 
-def match_codes(
+async def match_codes(
     queries: List[Tuple[CodeSystem, str]],
     chroma_client: ClientAPI,
-    model: SentenceTransformer,
+    embedder: Embed,
 ) -> List[Tuple[str | None, str | None]]:
     """
     Find the best matching medical codes for multiple (coding_system, description) pairs.
@@ -96,8 +83,8 @@ def match_codes(
     # Process each coding system in batch
     for system, system_queries in system_groups.items():
         indices, descriptions = zip(*system_queries)
-        batch_results = match_codes_in_system(
-            system, list(descriptions), chroma_client, model
+        batch_results = await match_codes_in_system(
+            system, list(descriptions), chroma_client, embedder
         )
 
         # Map results back to original positions

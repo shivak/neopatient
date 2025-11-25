@@ -13,10 +13,9 @@ import jinja2
 from chromadb.api import ClientAPI
 import pandas as pd
 import pyarrow as pa
-from sentence_transformers import SentenceTransformer
-
 from .matcher import match_codes
 from .database import resolve_chroma_client
+from .embed import Embed, create_embedder
 from .models import (
     UncodedPatient,
     VerificationResponse,
@@ -68,6 +67,8 @@ async def synthesize_patient(
     negative: str,
     patient_id: int,
     chroma_db: Union[ClientAPI, pathlib.Path, None],
+    embedder_model: str,
+    embedder_args: str,
     seed: int | None = None,
     generator: str = "gpt-5",
     verifier: str = "gpt-5",
@@ -86,6 +87,8 @@ async def synthesize_patient(
         negative: Negative cohort description for verification
         patient_id: Unique patient identifier
         chroma_db: The ChromaDB client, path, or None for code matching
+        embedder_model: Embedder model name for code matching
+        embedder_args: Embedder args string for code matching
         seed: Optional seed for reproducibility
         generator: Model name for generation (default: "gpt-5")
         verifier: Model name for verification (default: "gpt-5")
@@ -100,6 +103,7 @@ async def synthesize_patient(
     """
     chroma_client = resolve_chroma_client(chroma_db)
     client = AsyncOpenAI()  # Assume API key is set via environment
+    embedder = create_embedder(embedder_model, embedder_args)
 
     print(f"Generating record using: {generator}")
 
@@ -145,7 +149,9 @@ async def synthesize_patient(
         raise ValueError("Generation not finished, discarding incomplete record")
     record_data = generation_response.records
     # Step 2: Match codes and create DataSchema
-    record = _match_codes([record_data], [patient_id], chroma_client)[0]
+    record = (await _match_codes([record_data], [patient_id], chroma_client, embedder))[
+        0
+    ]
 
     # Step 3: Verify the record satisfies cohort-level positive and negative descriptions (cohort-level, but description includes negatives)
     record_tsv = record.to_pandas().to_csv(sep="\t", index=False)
@@ -176,6 +182,8 @@ async def synthesize_patient(
 async def synthesize_cohort(
     cohort_specs: List[CohortSpec],
     chroma_db: Union[ClientAPI, pathlib.Path, None],
+    embedder_model: str,
+    embedder_args: str,
     epsilon: float = 0.2,
     state: State | None = None,
     generator: str = "gpt-5",
@@ -198,6 +206,8 @@ async def synthesize_cohort(
             - positive: Positive cohort description
             - negative: Negative (anti-cohort) description
         chroma_db: The ChromaDB client, path, or None for code matching
+        embedder_model: Embedder model name for code matching
+        embedder_args: Embedder args string for code matching
         epsilon: Over-generation factor (deprecated, now exact count from sampling)
         state: Optional state to resume from a previous batch operation
         generator: Model name for generation (default: "gpt-5")
@@ -211,6 +221,7 @@ async def synthesize_cohort(
     """
     chroma_db = resolve_chroma_client(chroma_db)
     client = AsyncOpenAI()
+    embedder = create_embedder(embedder_model, embedder_args)
 
     # If resuming from state, use existing state
     if state is not None:
@@ -226,6 +237,9 @@ async def synthesize_cohort(
             "generator": generator,
             "verifier": verifier,
             "sampler": sampler,
+            "embedder": embedder,
+            "embedder_model": embedder_model,
+            "embedder_args": embedder_args,
             "sampled_descriptions": [],
             "generation_tickets": [],
             "generated_records": [],
@@ -264,6 +278,8 @@ async def synthesize_cohort(
 async def synthesize_cohort_with_state_file(
     cohort_specs: List[CohortSpec],
     chroma_db: Union[ClientAPI, pathlib.Path, None],
+    embedder_model: str,
+    embedder_args: str,
     generator: str = "gpt-5-nano",
     verifier: str = "gpt-5",
     sampler: str = "gpt-5",
@@ -276,6 +292,8 @@ async def synthesize_cohort_with_state_file(
     Args:
         cohort_specs: List of cohort specifications
         chroma_db: ChromaDB client, path, or None
+        embedder_model: Embedder model name for code matching
+        embedder_args: Embedder args string for code matching
         generator: Model for generation
         verifier: Model for verification
         sampler: Model for sampling
@@ -289,10 +307,19 @@ async def synthesize_cohort_with_state_file(
     if state_file and pathlib.Path(state_file).exists():
         with open(state_file, "r") as f:
             state = json.load(f)
+        # If resuming from state, reconstruct embedder if not present
+        if state and "embedder" not in state:
+            from .embed import create_embedder
+
+            state["embedder"] = create_embedder(
+                state["embedder_model"], state.get("embedder_args", "")
+            )
     while True:
         result = await synthesize_cohort(
             cohort_specs=cohort_specs,
             chroma_db=chroma_db,
+            embedder_model=embedder_model,
+            embedder_args=embedder_args,
             generator=generator,
             verifier=verifier,
             sampler=sampler,
@@ -321,7 +348,7 @@ async def _handle_sampling_stage(
 
     # Sample for each cohort
     for spec in state["cohort_specs"]:
-        record_type = spec.get("record_type", "ehr-outpatient")
+        record_type = spec.record_type.value
         csv_path = _get_csv_path(record_type)
         stats = sample_patient_stats(csv_path, spec["count"])
         duration = stats[0]["duration"]  # assuming same duration for cohort
@@ -352,7 +379,7 @@ async def _handle_generation_stage(
 
     for cohort_idx, sampled in enumerate(state["sampled_descriptions"]):
         spec = state["cohort_specs"][cohort_idx]
-        record_type = spec.get("record_type", "ehr-outpatient")
+        record_type = spec.record_type.value
         csv_path = _get_csv_path(record_type)
         stats = sample_patient_stats(csv_path, spec["count"])
         for (patient_id, pr), stat in zip(sampled.items(), stats):
@@ -391,8 +418,8 @@ async def _handle_generation_stage(
 
     # Submit batch request
     try:
-        batch_response = client.batches.create(
-            input_file_id=_create_jsonl_file(batch_requests),
+        batch_response = await client.batches.create(
+            input_file_id=await _create_jsonl_file(batch_requests),
             endpoint="/v1/chat/completions",
             completion_window="24h",
         )
@@ -449,11 +476,14 @@ async def _handle_matching_stage(
     chroma_client = resolve_chroma_client(state["chroma_db"])
 
     # Apply code matching to all generated records
+    embedder = state["embedder"]
     state["coded_cohorts"] = []
     for cohort_records, cohort_patient_ids in zip(
         state["generated_records"], state["patient_ids"]
     ):
-        matched = _match_codes(cohort_records, cohort_patient_ids, chroma_client)
+        matched = await _match_codes(
+            cohort_records, cohort_patient_ids, chroma_client, embedder
+        )
         state["coded_cohorts"].append(matched)
 
     # Start verification stage
@@ -469,8 +499,8 @@ async def _start_verification_stage(
 
     for cohort_idx, cohort_records in enumerate(state["coded_cohorts"]):
         spec = state["cohort_specs"][cohort_idx]
-        positive = spec["positive"]
-        negative = spec["negative"]
+        positive = spec.positive
+        negative = spec.negative
 
         for record_idx, record in enumerate(cohort_records):
             record_tsv = record.to_pandas().to_csv(sep="\t", index=False)
@@ -555,7 +585,7 @@ def _handle_finalize_stage(state: State) -> List[Cohort]:
         zip(state["coded_cohorts"], state["verifications"])
     ):
         spec = state["cohort_specs"][cohort_idx]
-        target_count = spec["count"]
+        target_count = spec.count
         satisfactory_records = [
             record
             for record, verification in zip(cohort_records, cohort_verifications)
@@ -652,10 +682,11 @@ def _parse_verification_results(
     return cohort_verifications
 
 
-def _match_codes(
+async def _match_codes(
     cohort_records: List[UncodedPatient],
     patient_ids: List[int],
     chroma_client: ClientAPI,
+    embedder: Embed,
 ) -> Cohort:
     """Match code descriptions to standardized codes using ChromaDB and return list of patient records."""
     if not cohort_records:
@@ -673,8 +704,7 @@ def _match_codes(
     queries = list(zip(systems, all_descriptions))
 
     # Perform batch matching
-    model = SentenceTransformer("abhinand/MedEmbed-large-v0.1")
-    batch_results = match_codes(queries, chroma_client, model)
+    batch_results = await match_codes(queries, chroma_client, embedder)
 
     # Build tables per patient
     cohort = []
