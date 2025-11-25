@@ -4,7 +4,7 @@ import random
 import string
 import sys
 import time
-from typing import Dict, List, Union, Any, Tuple
+from typing import Dict, List, Union, Any
 import pathlib
 import datetime
 import openai
@@ -16,7 +16,7 @@ import pyarrow as pa
 from sentence_transformers import SentenceTransformer
 from huggingface_hub import snapshot_download
 from .matcher import batch_find_best_matching_codes
-from .models import UncodedPatient, VerificationResponse, Event, State, Patient, Cohort, PatientRecipe, GenerationResponse, CohortSpec
+from .models import UncodedPatient, VerificationResponse, State, Patient, Cohort, PatientRecipe, GenerationResponse, CohortSpec
 from .sampler import sample_individual_descriptions
 from meds.schema import DataSchema
 
@@ -112,10 +112,7 @@ def synthesize_patient(
     # Sample stats
     csv_path = _get_csv_path(record_type)
     stat = sample_patient_stats(csv_path, 1)[0]
-    total = stat['total_codes']
-    unique = stat['unique_codes']
     duration = stat['duration']
-    num_times = stat['num_times']
     avg_codes_per_time = stat['avg_codes_per_time']
     if end_date is None:
         end_date = datetime.datetime.now().isoformat()
@@ -204,7 +201,7 @@ def synthesize_cohort(
         - List of cohorts, where each cohort is a list of patient records
         - State dictionary for resuming if batch is not ready yet
     """
-    chroma_client = _resolve_chroma_client(chroma_db)
+    chroma_db = _resolve_chroma_client(chroma_db)
     client = openai.OpenAI()
 
     # If resuming from state, use existing state
@@ -227,8 +224,6 @@ def synthesize_cohort(
             "verification_tickets": [],
             "verifications": [],
         }
-
-    chroma_client = _resolve_chroma_client(chroma_db)
 
     # Stage 1: Sample individual patients
     if current_state["stage"] == "sampling":
@@ -349,8 +344,6 @@ def _handle_generation_stage(
         csv_path = _get_csv_path(record_type)
         stats = sample_patient_stats(csv_path, spec["count"])
         for (patient_id, pr), stat in zip(sampled.items(), stats):
-            total = stat['total_codes']
-            unique = stat['unique_codes']
             avg_codes_per_time = stat['avg_codes_per_time']
             individual_description = pr.description
             start_date_str = pr.start_date.isoformat()
