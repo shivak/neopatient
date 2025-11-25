@@ -95,15 +95,6 @@ class PatientRecipe(BaseModel):
 
 class State(TypedDict, total=False):
     stage: str
-    cohort_specs: List[CohortSpec]
-    chroma_db: Any
-    epsilon: float
-    generator: str
-    verifier: str
-    sampler: str
-    embedder: Any  # Embed function
-    embedder_model: str
-    embedder_args: str
     sampled_descriptions: List[Dict[int, PatientRecipe]]
     generation_tickets: List[str]
     generated_records: List[List[UncodedPatient]]

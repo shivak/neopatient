@@ -226,20 +226,10 @@ async def synthesize_cohort(
     # If resuming from state, use existing state
     if state is not None:
         current_state = state.copy()
-        chroma_db = current_state["chroma_db"]
     else:
         # Initialize new state
         current_state = {
             "stage": "sampling",
-            "cohort_specs": cohort_specs,
-            "chroma_db": chroma_db,
-            "epsilon": epsilon,
-            "generator": generator,
-            "verifier": verifier,
-            "sampler": sampler,
-            "embedder": embedder,
-            "embedder_model": embedder_model,
-            "embedder_args": embedder_args,
             "sampled_descriptions": [],
             "generation_tickets": [],
             "generated_records": [],
@@ -249,27 +239,37 @@ async def synthesize_cohort(
 
     # Stage 1: Sample individual patients
     if current_state["stage"] == "sampling":
-        return await _handle_sampling_stage(client, current_state)
+        return await _handle_sampling_stage(
+            client, current_state, cohort_specs, sampler
+        )
 
     # Stage 2: Generate records using batch API
     elif current_state["stage"] == "generation":
-        return await _handle_generation_stage(client, current_state)
+        return await _handle_generation_stage(
+            client, current_state, cohort_specs, generator
+        )
 
     # Stage 2: Check generation results and apply code matching
     elif current_state["stage"] == "check_generation":
-        return await _handle_check_generation_stage(client, current_state)
+        return await _handle_check_generation_stage(
+            client, current_state, cohort_specs, generator
+        )
 
     # Stage 3: Start verification with code-matched records
     elif current_state["stage"] == "matching":
-        return await _handle_matching_stage(client, current_state)
+        return await _handle_matching_stage(
+            client, current_state, chroma_db, embedder, cohort_specs, verifier
+        )
 
     # Stage 4: Check verification results
     elif current_state["stage"] == "check_verification":
-        return await _handle_check_verification_stage(client, current_state)
+        return await _handle_check_verification_stage(
+            client, current_state, cohort_specs, verifier
+        )
 
     # Stage 5: Process final results
     elif current_state["stage"] == "finalize":
-        return _handle_finalize_stage(current_state)
+        return _handle_finalize_stage(current_state, cohort_specs)
 
     else:
         raise ValueError(f"Unknown stage: {current_state['stage']}")
@@ -338,16 +338,16 @@ async def synthesize_cohort_with_state_file(
 
 
 async def _handle_sampling_stage(
-    client: AsyncOpenAI, state: State
+    client: AsyncOpenAI, state: State, cohort_specs: List[CohortSpec], sampler: str
 ) -> Union[List[Cohort], State]:
     """Sample individual patient recipes for each cohort using the sampler LLM."""
     if state["sampled_descriptions"]:
         # Already sampled, move to generation
         state["stage"] = "generation"
-        return _handle_generation_stage(client, state)
+        return _handle_generation_stage(client, state, cohort_specs, sampler)
 
     # Sample for each cohort
-    for spec in state["cohort_specs"]:
+    for spec in cohort_specs:
         record_type = spec.record_type.value
         csv_path = _get_csv_path(record_type)
         stats = sample_patient_stats(csv_path, spec["count"])
@@ -357,28 +357,28 @@ async def _handle_sampling_stage(
             spec["negative"],
             spec["count"],
             duration,
-            state["sampler"],
+            sampler,
         )
         state["sampled_descriptions"].append(sampled)
 
     state["stage"] = "generation"
-    return _handle_generation_stage(client, state)
+    return _handle_generation_stage(client, state, cohort_specs, sampler)
 
 
 async def _handle_generation_stage(
-    client: AsyncOpenAI, state: State
+    client: AsyncOpenAI, state: State, cohort_specs: List[CohortSpec], generator: str
 ) -> Union[List[Cohort], State]:
     """Handle the initial generation stage using batch API."""
     if state["generation_tickets"]:
         # Already submitted generation requests, move to checking
         state["stage"] = "check_generation"
-        return _handle_check_generation_stage(client, state)
+        return _handle_check_generation_stage(client, state, cohort_specs, generator)
 
     # Prepare batch requests
     batch_requests = []
 
     for cohort_idx, sampled in enumerate(state["sampled_descriptions"]):
-        spec = state["cohort_specs"][cohort_idx]
+        spec = cohort_specs[cohort_idx]
         record_type = spec.record_type.value
         csv_path = _get_csv_path(record_type)
         stats = sample_patient_stats(csv_path, spec["count"])
@@ -405,7 +405,7 @@ async def _handle_generation_stage(
                     "method": "POST",
                     "url": "/v1/chat/completions",
                     "body": {
-                        "model": state.get("generator"),
+                        "model": generator,
                         "messages": [{"role": "user", "content": prompt}],
                         "response_format": {
                             "type": "json_schema",
@@ -431,7 +431,13 @@ async def _handle_generation_stage(
 
 
 async def _handle_check_generation_stage(
-    client: AsyncOpenAI, state: State
+    client: AsyncOpenAI,
+    state: State,
+    cohort_specs: List[CohortSpec],
+    chroma_db,
+    generator: str,
+    embedder,
+    verifier: str,
 ) -> Union[List[Cohort], State]:
     """Check if generation batch is ready and start verification if so."""
     if not state["generation_tickets"]:
@@ -454,7 +460,9 @@ async def _handle_check_generation_stage(
 
             # Move to matching stage
             state["stage"] = "matching"
-            return _handle_matching_stage(client, state)
+            return _handle_matching_stage(
+                client, state, chroma_db, embedder, cohort_specs, verifier
+            )
 
         elif batch_status.status in ["failed", "expired", "cancelled"]:
             raise RuntimeError(
@@ -470,13 +478,12 @@ async def _handle_check_generation_stage(
 
 
 async def _handle_matching_stage(
-    client: AsyncOpenAI, state: State
+    client: AsyncOpenAI, state: State, chroma_db, embedder, cohort_specs, verifier
 ) -> Union[List[Cohort], State]:
     """Handle code matching stage and start verification."""
-    chroma_client = resolve_chroma_client(state["chroma_db"])
+    chroma_client = resolve_chroma_client(chroma_db)
 
     # Apply code matching to all generated records
-    embedder = state["embedder"]
     state["coded_cohorts"] = []
     for cohort_records, cohort_patient_ids in zip(
         state["generated_records"], state["patient_ids"]
@@ -487,18 +494,18 @@ async def _handle_matching_stage(
         state["coded_cohorts"].append(matched)
 
     # Start verification stage
-    return _start_verification_stage(client, state)
+    return _start_verification_stage(client, state, cohort_specs, verifier)
 
 
 async def _start_verification_stage(
-    client: AsyncOpenAI, state: State
+    client: AsyncOpenAI, state: State, cohort_specs: List[CohortSpec], verifier: str
 ) -> Union[List[Cohort], State]:
     """Start verification stage using batch API."""
     # Prepare verification requests
     batch_requests = []
 
     for cohort_idx, cohort_records in enumerate(state["coded_cohorts"]):
-        spec = state["cohort_specs"][cohort_idx]
+        spec = cohort_specs[cohort_idx]
         positive = spec.positive
         negative = spec.negative
 
@@ -506,6 +513,23 @@ async def _start_verification_stage(
             record_tsv = record.to_pandas().to_csv(sep="\t", index=False)
             prompt = VERIFICATION_TEMPLATE.render(
                 record_tsv=record_tsv, positive=positive, negative=negative
+            )
+            salt = "".join(random.choices(string.ascii_letters + string.digits, k=8))
+
+            batch_requests.append(
+                {
+                    "custom_id": f"verify_cohort_{cohort_idx}_patient_{record_idx}_{salt}",
+                    "method": "POST",
+                    "url": "/v1/chat/completions",
+                    "body": {
+                        "model": verifier,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "response_format": {
+                            "type": "json_schema",
+                            "json_schema": VerificationResponse.model_json_schema(),
+                        },
+                    },
+                }
             )
             salt = "".join(random.choices(string.ascii_letters + string.digits, k=8))
 
@@ -541,7 +565,7 @@ async def _start_verification_stage(
 
 
 async def _handle_check_verification_stage(
-    client: AsyncOpenAI, state: State
+    client: AsyncOpenAI, state: State, cohort_specs: List[CohortSpec], verifier: str
 ) -> Union[List[Cohort], State]:
     """Check if verification batch is ready."""
     if not state["verification_tickets"]:
@@ -562,7 +586,7 @@ async def _handle_check_verification_stage(
 
             # Move to finalization
             state["stage"] = "finalize"
-            return _handle_finalize_stage(state)
+            return _handle_finalize_stage(state, cohort_specs)
 
         elif batch_status.status in ["failed", "expired", "cancelled"]:
             raise RuntimeError(
@@ -577,14 +601,16 @@ async def _handle_check_verification_stage(
         raise RuntimeError(f"Failed to check verification batch status: {e}")
 
 
-def _handle_finalize_stage(state: State) -> List[Cohort]:
+def _handle_finalize_stage(
+    state: State, cohort_specs: List[CohortSpec]
+) -> List[Cohort]:
     """Finalize results by filtering satisfactory records."""
     final_results = []
 
     for cohort_idx, (cohort_records, cohort_verifications) in enumerate(
         zip(state["coded_cohorts"], state["verifications"])
     ):
-        spec = state["cohort_specs"][cohort_idx]
+        spec = cohort_specs[cohort_idx]
         target_count = spec.count
         satisfactory_records = [
             record
