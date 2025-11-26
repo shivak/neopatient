@@ -24,6 +24,8 @@ from .models import (
     Cohort,
     PatientRecipe,
     GenerationResponse,
+    FlatGenerationResponse,
+    Event,
     CohortSpec,
 )
 from .sampler import sample_individual_descriptions
@@ -141,16 +143,33 @@ async def synthesize_patient(
             "json_schema": {
                 "name": "generation_response",
                 "strict": True,
-                "schema": GenerationResponse.model_json_schema(),
+                "schema": FlatGenerationResponse.model_json_schema(),
             },
         },
         #        seed=seed,
         temperature=0.7,
     )
     content = response.choices[0].message.content
+    print(content)
     if content is None:
         raise ValueError("LLM response content is None")
-    generation_response = GenerationResponse.model_validate_json(content)
+    flat_generation_response = FlatGenerationResponse.model_validate_json(content)
+    generation_response = GenerationResponse(
+        finished=flat_generation_response.finished,
+        records={
+            time: [
+                Event(
+                    code_system=e[0],
+                    code_desc=e[1],
+                    numeric_value=e[2],
+                    unit=e[3],
+                    text_value=e[4],
+                )
+                for e in events
+            ]
+            for time, events in flat_generation_response.records.items()
+        },
+    )
     if not generation_response.finished:
         raise ValueError("Generation not finished, discarding incomplete record")
     record_data = generation_response.records
@@ -419,7 +438,7 @@ async def _handle_generation_stage(
                             "json_schema": {
                                 "name": "generation_response",
                                 "strict": True,
-                                "schema": GenerationResponse.model_json_schema(),
+                                "schema": FlatGenerationResponse.model_json_schema(),
                             },
                         },
                         "temperature": 1.0,
@@ -685,10 +704,26 @@ def _parse_generation_results(
             custom_id = result["custom_id"]
             cohort_idx = int(custom_id.split("_")[1])
             patient_id = int(custom_id.split("_")[3])
-            generation_response = GenerationResponse.model_validate_json(
+            flat_generation_response = FlatGenerationResponse.model_validate_json(
                 result["response"]["body"]["choices"][0]["message"]["content"]
             )
-            if generation_response.finished:
+            if flat_generation_response.finished:
+                generation_response = GenerationResponse(
+                    finished=flat_generation_response.finished,
+                    records={
+                        time: [
+                            Event(
+                                code_system=e[0],
+                                code_desc=e[1],
+                                numeric_value=e[2],
+                                unit=e[3],
+                                text_value=e[4],
+                            )
+                            for e in events
+                        ]
+                        for time, events in flat_generation_response.records.items()
+                    },
+                )
                 cohort_records[cohort_idx][patient_id] = generation_response.records
 
     return cohort_records

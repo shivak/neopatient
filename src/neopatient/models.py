@@ -65,6 +65,19 @@ class GenerationResponse(BaseModel):
     records: UncodedPatient = Field(description="The generated patient records")
 
 
+FlatEvent = tuple[CodeSystem, str, float | None, str | None, str | None]
+FlatUncodedPatient = Dict[str, List[FlatEvent]]
+
+
+class FlatGenerationResponse(BaseModel):
+    """Flat response from generation LLM with finished flag (events as tuples)."""
+
+    finished: bool = Field(description="Whether the generation is complete")
+    records: FlatUncodedPatient = Field(
+        description="The generated patient records (flat)"
+    )
+
+
 # Type alias for a single patient's MEDS data table
 type Patient = pa.Table
 
