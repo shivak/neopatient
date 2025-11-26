@@ -42,7 +42,17 @@ async def sample_individual_descriptions(
     response = await client.chat.completions.create(
         model=sampler_model,
         messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "patient_recipes",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "additionalProperties": PatientRecipe.model_json_schema(),
+                },
+            },
+        },
         temperature=0.7,
     )
     content = response.choices[0].message.content

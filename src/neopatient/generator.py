@@ -138,7 +138,11 @@ async def synthesize_patient(
         messages=[{"role": "user", "content": prompt}],
         response_format={
             "type": "json_schema",
-            "json_schema": GenerationResponse.model_json_schema(),
+            "json_schema": {
+                "name": "generation_response",
+                "strict": True,
+                "schema": GenerationResponse.model_json_schema(),
+            },
         },
         #        seed=seed,
         temperature=0.7,
@@ -165,7 +169,11 @@ async def synthesize_patient(
         messages=[{"role": "user", "content": ver_prompt}],
         response_format={
             "type": "json_schema",
-            "json_schema": VerificationResponse.model_json_schema(),
+            "json_schema": {
+                "name": "verification_response",
+                "strict": True,
+                "schema": VerificationResponse.model_json_schema(),
+            },
         },
         #        seed=seed,
         temperature=0.0,
@@ -408,7 +416,11 @@ async def _handle_generation_stage(
                         "messages": [{"role": "user", "content": prompt}],
                         "response_format": {
                             "type": "json_schema",
-                            "json_schema": GenerationResponse.model_json_schema(),
+                            "json_schema": {
+                                "name": "generation_response",
+                                "strict": True,
+                                "schema": GenerationResponse.model_json_schema(),
+                            },
                         },
                         "temperature": 1.0,
                     },
@@ -521,7 +533,11 @@ async def _start_verification_stage(
                         "messages": [{"role": "user", "content": prompt}],
                         "response_format": {
                             "type": "json_schema",
-                            "json_schema": VerificationResponse.model_json_schema(),
+                            "json_schema": {
+                                "name": "verification_response",
+                                "strict": True,
+                                "schema": VerificationResponse.model_json_schema(),
+                            },
                         },
                     },
                 }
@@ -538,7 +554,11 @@ async def _start_verification_stage(
                         "messages": [{"role": "user", "content": prompt}],
                         "response_format": {
                             "type": "json_schema",
-                            "json_schema": VerificationResponse.model_json_schema(),
+                            "json_schema": {
+                                "name": "verification_response",
+                                "strict": True,
+                                "schema": VerificationResponse.model_json_schema(),
+                            },
                         },
                         "temperature": 0.0,
                     },
