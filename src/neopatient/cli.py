@@ -1,6 +1,5 @@
 import argparse
 import asyncio
-import json
 import logging
 import pathlib
 import sys
@@ -8,6 +7,7 @@ import pyarrow as pa
 from pyarrow import parquet
 from . import synthesize_patient, synthesize_cohort_with_state_file
 from .models import CohortSpec, RecordType
+from .cli_common import add_embedder_args, add_generation_args
 
 
 async def _main():
@@ -18,96 +18,27 @@ async def _main():
     single_parser = subparsers.add_parser(
         "single", help="Generate a single patient record"
     )
-    single_parser.add_argument(
-        "--positive", required=True, help="Positive patient description"
-    )
-    single_parser.add_argument(
-        "--negative", required=True, help="Negative patient description"
-    )
-    single_parser.add_argument(
-        "--out", required=True, help="Output path for parquet file"
-    )
-    single_parser.add_argument(
-        "--seed", type=int, default=None, help="Seed for reproducibility"
-    )
-    single_parser.add_argument(
-        "--db_dir",
-        default=None,
-        help="Path to ChromaDB database directory, or None to download from Hugging Face",
-    )
-    single_parser.add_argument(
-        "--generator", default="gpt-5-nano", help="Model name for generation"
-    )
-    single_parser.add_argument(
-        "--verifier", default="gpt-5", help="Model name for verification"
-    )
-    single_parser.add_argument(
-        "--record-type",
-        default="ehr-outpatient",
-        choices=[e.value for e in RecordType],
-        help="Type of record",
-    )
+    add_embedder_args(single_parser)
+    add_generation_args(single_parser)
+    single_parser.set_defaults(embedder_args={"model_kwargs": {"dtype": "bfloat16"}})
     single_parser.add_argument(
         "--end-date",
         default=None,
         help="End date for the record (ISO string), defaults to current time",
-    )
-    single_parser.add_argument(
-        "--embedder",
-        default="sentence-transformers/all-MiniLM-L6-v2",
-        help="Embedder model name for code matching",
-    )
-    single_parser.add_argument(
-        "--embedder-args",
-        type=json.loads,
-        default={},
-        help="JSON dict for embedder configuration",
-    )
-    single_parser.add_argument(
-        "--embedder-batch-size",
-        type=int,
-        default=128,
-        help="Batch size for embedding operations",
     )
 
     # Cohort subcommand
     cohort_parser = subparsers.add_parser(
         "cohort", help="Generate a cohort of patient records"
     )
-    cohort_parser.add_argument(
-        "--positive", required=True, help="Positive cohort description"
-    )
-    cohort_parser.add_argument(
-        "--negative", required=True, help="Negative cohort description"
-    )
+    add_embedder_args(cohort_parser)
+    add_generation_args(cohort_parser)
+    cohort_parser.set_defaults(embedder="sentence-transformers/all-MiniLM-L6-v2")
     cohort_parser.add_argument(
         "--size", type=int, required=True, help="Size of the cohort"
     )
     cohort_parser.add_argument(
-        "--out", required=True, help="Output path for parquet file"
-    )
-    cohort_parser.add_argument(
-        "--seed", type=int, default=None, help="Seed for reproducibility"
-    )
-    cohort_parser.add_argument(
-        "--db_dir",
-        default=None,
-        help="Path to ChromaDB database directory, or None to download from Hugging Face",
-    )
-    cohort_parser.add_argument(
-        "--generator", default="gpt-5-nano", help="Model name for generation"
-    )
-    cohort_parser.add_argument(
-        "--verifier", default="gpt-5", help="Model name for verification"
-    )
-    cohort_parser.add_argument(
         "--sampler", default="gpt-5", help="Model name for sampling"
-    )
-    cohort_parser.add_argument(
-        "--record-type",
-        default="ehr-outpatient",
-        choices=[e.value for e in RecordType],
-        help="Type of record",
     )
     cohort_parser.add_argument(
         "--poll_interval",
@@ -119,23 +50,6 @@ async def _main():
         "--state-file",
         required=True,
         help="Path to state file for resuming batch operations",
-    )
-    cohort_parser.add_argument(
-        "--embedder",
-        default="sentence-transformers/all-MiniLM-L6-v2",
-        help="Embedder model name for code matching",
-    )
-    cohort_parser.add_argument(
-        "--embedder-args",
-        type=json.loads,
-        default={},
-        help="JSON dict for embedder configuration",
-    )
-    cohort_parser.add_argument(
-        "--embedder-batch-size",
-        type=int,
-        default=128,
-        help="Batch size for embedding operations",
     )
 
     args = parser.parse_args()

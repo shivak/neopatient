@@ -1,10 +1,10 @@
 import argparse
 import asyncio
-import json
 import logging
 import sys
 from .database import create_database
 from .embed import create_embedder
+from .cli_common import add_embedder_args
 
 
 async def _main():
@@ -21,23 +21,8 @@ async def _main():
         "--db_dir",
         help="Path to ChromaDB database directory",
     )
-    parser.add_argument(
-        "--embedder",
-        default="Qwen/Qwen3-Embedding-4B",
-        help="Embedder model name (HF if contains '/', OpenAI otherwise)",
-    )
-    parser.add_argument(
-        "--embedder-args",
-        type=json.loads,
-        default={"model_kwargs": {"device_map": "auto"}},
-        help="Embedder arguments as JSON dict",
-    )
-    parser.add_argument(
-        "--embedder-batch-size",
-        type=int,
-        default=128,
-        help="Batch size for embedding operations",
-    )
+    add_embedder_args(parser)
+    parser.set_defaults(embedder_args={"model_kwargs": {"device_map": "auto"}})
 
     args = parser.parse_args()
 
