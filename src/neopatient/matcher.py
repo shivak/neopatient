@@ -1,7 +1,9 @@
 from chromadb.api import ClientAPI
 from typing import List, Tuple, Dict
-from .models import CodeSystem
+from .models import CodeSystem, UncodedPatient, Cohort
 from .embed import Embed
+from meds.schema import DataSchema as PatientSchema
+import pyarrow as pa
 
 
 async def match_codes_in_system(
@@ -42,7 +44,7 @@ async def match_codes_in_system(
     # Process results
     matched_results = []
     for i in range(len(descriptions)):
-        code = results["ids"][i]
+        code = results["ids"][i][0]
         document = results["documents"][i][0]
         matched_results.append((code, document))
 
@@ -92,3 +94,78 @@ async def match_codes(
             results[idx] = result
 
     return results
+
+
+async def code_patient(
+    patients: Dict[int, UncodedPatient],
+    chroma_client: ClientAPI,
+    embedder: Embed,
+) -> Cohort:
+    """Match code descriptions to standardized codes using ChromaDB and return list of patient records."""
+    if not patients:
+        return []
+
+    # Collect all descriptions to match
+    queries = [
+        (row.code_system, row.code_desc)
+        for record in patients.values()
+        for time_str, events in record.root.items()
+        for row in events
+    ]
+
+    # Perform batch matching
+    batch_results = await match_codes(queries, chroma_client, embedder)
+
+    # Build tables per patient
+    cohort = []
+    idx = 0
+    for patient_id, record in patients.items():
+        rows = []
+        first_entry = True
+        for time_str, events in record.root.items():
+            if first_entry:
+                # Handle birthday: Add MEDS_BIRTH row with time_str, and static events with time=None
+                rows.append(
+                    {
+                        "subject_id": patient_id,
+                        "time": time_str,  # Birthday time for MEDS_BIRTH
+                        "code": "MEDS_BIRTH",
+                        "numeric_value": None,
+                        "unit": None,
+                        "text_value": None,
+                    }
+                )
+                for row in events:
+                    code, matched_desc = batch_results[idx]
+                    rows.append(
+                        {
+                            "subject_id": patient_id,
+                            "time": None,  # Untimestamped for static
+                            "code": code,
+                            "numeric_value": row.numeric_value,
+                            "unit": row.unit,
+                            "text_value": row.text_value,
+                        }
+                    )
+                    idx += 1
+                first_entry = False
+            else:
+                # Regular events with time_str
+                for row in events:
+                    code, matched_desc = batch_results[idx]
+                    rows.append(
+                        {
+                            "subject_id": patient_id,
+                            "time": time_str,
+                            "code": code,
+                            "numeric_value": row.numeric_value,
+                            "unit": row.unit,
+                            "text_value": row.text_value,
+                        }
+                    )
+                    idx += 1
+        print(rows)
+        table = pa.Table.from_pylist(rows, schema=PatientSchema.schema())
+        cohort.append(table)
+
+    return cohort

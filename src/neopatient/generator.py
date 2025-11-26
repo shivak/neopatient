@@ -12,10 +12,9 @@ import jinja2
 
 from chromadb.api import ClientAPI
 import pandas as pd
-import pyarrow as pa
-from .matcher import match_codes
+from .matcher import code_patient
 from .database import resolve_chroma_client
-from .embed import Embed, create_embedder
+from .embed import create_embedder
 from .models import (
     UncodedPatient,
     VerificationResponse,
@@ -29,7 +28,6 @@ from .models import (
     CohortSpec,
 )
 from .sampler import sample_individual_descriptions
-from meds.schema import DataSchema
 
 
 # Load Jinja2 template from file
@@ -173,10 +171,10 @@ async def synthesize_patient(
     if not generation_response.finished:
         raise ValueError("Generation not finished, discarding incomplete record")
     record_data = generation_response.records
-    # Step 2: Match codes and create DataSchema
-    record = (await _match_codes([record_data], [patient_id], chroma_client, embedder))[
-        0
-    ]
+
+    # Step 2: Match codes and create Patient
+    records = await code_patient({patient_id: record_data}, chroma_client, embedder)
+    record = records[0]
 
     # Step 3: Verify the record satisfies cohort-level positive and negative descriptions (cohort-level, but description includes negatives)
     record_tsv = record.to_pandas().to_csv(sep="\t", index=False)
@@ -516,7 +514,7 @@ async def _handle_matching_stage(
     # Apply code matching to all generated records
     state["coded_cohorts"] = []
     for cohort_dict in state["generated_records"]:
-        matched = await _match_codes(cohort_dict, chroma_client, embedder)
+        matched = await code_patient(cohort_dict, chroma_client, embedder)
         state["coded_cohorts"].append(matched)
 
     # Start verification stage
@@ -754,77 +752,3 @@ def _parse_verification_results(
             cohort_verifications[cohort_idx].append(verification)
 
     return cohort_verifications
-
-
-async def _match_codes(
-    patients: Dict[int, UncodedPatient],
-    chroma_client: ClientAPI,
-    embedder: Embed,
-) -> Cohort:
-    """Match code descriptions to standardized codes using ChromaDB and return list of patient records."""
-    if not patients:
-        return []
-
-    # Collect all descriptions to match
-    queries = [
-        (row.code_system, row.code_desc)
-        for record in patients.values()
-        for time_str, events in record.root.items()
-        for row in events
-    ]
-
-    # Perform batch matching
-    batch_results = await match_codes(queries, chroma_client, embedder)
-
-    # Build tables per patient
-    cohort = []
-    idx = 0
-    for patient_id, record in patients.items():
-        rows = []
-        first_entry = True
-        for time_str, events in record.root.items():
-            if first_entry:
-                # Handle birthday: Add MEDS_BIRTH row with time_str, and static events with time=None
-                rows.append(
-                    {
-                        "subject_id": patient_id,
-                        "time": time_str,  # Birthday time for MEDS_BIRTH
-                        "code": "MEDS_BIRTH",
-                        "numeric_value": None,
-                        "unit": None,
-                        "text_value": None,
-                    }
-                )
-                for row in events:
-                    code, matched_desc = batch_results[idx]
-                    rows.append(
-                        {
-                            "subject_id": patient_id,
-                            "time": None,  # Untimestamped for static
-                            "code": code,
-                            "numeric_value": row.numeric_value,
-                            "unit": row.unit,
-                            "text_value": row.text_value,
-                        }
-                    )
-                    idx += 1
-                first_entry = False
-            else:
-                # Regular events with time_str
-                for row in events:
-                    code, matched_desc = batch_results[idx]
-                    rows.append(
-                        {
-                            "subject_id": patient_id,
-                            "time": time_str,
-                            "code": code,
-                            "numeric_value": row.numeric_value,
-                            "unit": row.unit,
-                            "text_value": row.text_value,
-                        }
-                    )
-                    idx += 1
-        table = pa.Table.from_pylist(rows, schema=DataSchema.schema)
-        cohort.append(table)
-
-    return cohort
