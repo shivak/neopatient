@@ -35,6 +35,7 @@ async def create_database(parquet_path: str, embedder: Embed, db_dir: str):
     client = chromadb.PersistentClient(path=db_dir, settings=settings)
 
     for system in CodeSystem:
+        print(f"Creating collection for {system}")
         # Delete existing collection if it exists
         try:
             client.delete_collection(system.value)
@@ -51,11 +52,8 @@ async def create_database(parquet_path: str, embedder: Embed, db_dir: str):
             "SELECT med_code, t.desc FROM read_parquet($parquet_path) AS t WHERE code_system = $system",
             params={"parquet_path": parquet_path, "system": system.value},
         )
-        chunk_size = client.get_max_batch_size()
-        while True:
-            chunk = results.fetch_record_batch(chunk_size=chunk_size)
-            if chunk is None:
-                break
+        rows_per_fetch = client.get_max_batch_size()
+        for chunk in results.fetch_record_batch(rows_per_batch=rows_per_fetch):
             med_codes = chunk["med_code"].to_pylist()
             descs = chunk["desc"].to_pylist()
 

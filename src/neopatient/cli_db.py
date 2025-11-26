@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import json
 import logging
 import sys
 from .database import create_database
@@ -22,16 +23,31 @@ async def _main():
     )
     parser.add_argument(
         "--embedder",
-        default="Qwen/Qwen3-Embedding-8B",
+        default="Qwen/Qwen3-Embedding-4B",
         help="Embedder model name (HF if contains '/', OpenAI otherwise)",
     )
     parser.add_argument(
         "--embedder-args",
-        default="",
-        help="Embedder arguments as comma-separated key=value pairs",
+        type=json.loads,
+        default={"model_kwargs": {"device_map": "auto"}},
+        help="Embedder arguments as JSON dict",
+    )
+    parser.add_argument(
+        "--embedder-batch-size",
+        type=int,
+        default=128,
+        help="Batch size for embedding operations",
     )
 
     args = parser.parse_args()
+
+    # Validate embedder_batch_size
+    if args.embedder_batch_size <= 0:
+        print(
+            f"Error: --embedder-batch-size must be a positive integer, got {args.embedder_batch_size}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Configure logging
     logging.basicConfig(
@@ -40,7 +56,9 @@ async def _main():
     logger = logging.getLogger(__name__)
 
     try:
-        embedder = create_embedder(args.embedder, args.embedder_args)
+        embedder = create_embedder(
+            args.embedder, args.embedder_batch_size, args.embedder_args
+        )
         logger.info(f"Using embedder: {args.embedder}")
 
         logger.info("Setting up databases...")

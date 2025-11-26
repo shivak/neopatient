@@ -68,7 +68,8 @@ async def synthesize_patient(
     patient_id: int,
     chroma_db: Union[ClientAPI, pathlib.Path, None],
     embedder_model: str,
-    embedder_args: str,
+    embedder_batch_size: int,
+    embedder_args: dict,
     seed: int | None = None,
     generator: str = "gpt-5",
     verifier: str = "gpt-5",
@@ -88,7 +89,8 @@ async def synthesize_patient(
         patient_id: Unique patient identifier
         chroma_db: The ChromaDB client, path, or None for code matching
         embedder_model: Embedder model name for code matching
-        embedder_args: Embedder args string for code matching
+        embedder_batch_size: Batch size for embedding operations
+        embedder_args: Embedder args dict for code matching
         seed: Optional seed for reproducibility
         generator: Model name for generation (default: "gpt-5")
         verifier: Model name for verification (default: "gpt-5")
@@ -103,7 +105,7 @@ async def synthesize_patient(
     """
     chroma_client = resolve_chroma_client(chroma_db)
     client = AsyncOpenAI()  # Assume API key is set via environment
-    embedder = create_embedder(embedder_model, embedder_args)
+    embedder = create_embedder(embedder_model, embedder_batch_size, embedder_args)
 
     print(f"Generating record using: {generator}")
 
@@ -183,7 +185,8 @@ async def synthesize_cohort(
     cohort_specs: List[CohortSpec],
     chroma_db: Union[ClientAPI, pathlib.Path, None],
     embedder_model: str,
-    embedder_args: str,
+    embedder_batch_size: int,
+    embedder_args: dict,
     epsilon: float = 0.2,
     state: State | None = None,
     generator: str = "gpt-5",
@@ -207,7 +210,7 @@ async def synthesize_cohort(
             - negative: Negative (anti-cohort) description
         chroma_db: The ChromaDB client, path, or None for code matching
         embedder_model: Embedder model name for code matching
-        embedder_args: Embedder args string for code matching
+        embedder_args: Embedder args dict for code matching
         epsilon: Over-generation factor (deprecated, now exact count from sampling)
         state: Optional state to resume from a previous batch operation
         generator: Model name for generation (default: "gpt-5")
@@ -221,7 +224,7 @@ async def synthesize_cohort(
     """
     chroma_db = resolve_chroma_client(chroma_db)
     client = AsyncOpenAI()
-    embedder = create_embedder(embedder_model, embedder_args)
+    embedder = create_embedder(embedder_model, embedder_batch_size, embedder_args)
 
     # If resuming from state, use existing state
     if state is not None:
@@ -279,7 +282,8 @@ async def synthesize_cohort_with_state_file(
     cohort_specs: List[CohortSpec],
     chroma_db: Union[ClientAPI, pathlib.Path, None],
     embedder_model: str,
-    embedder_args: str,
+    embedder_batch_size: int,
+    embedder_args: dict,
     generator: str = "gpt-5-nano",
     verifier: str = "gpt-5",
     sampler: str = "gpt-5",
@@ -293,7 +297,7 @@ async def synthesize_cohort_with_state_file(
         cohort_specs: List of cohort specifications
         chroma_db: ChromaDB client, path, or None
         embedder_model: Embedder model name for code matching
-        embedder_args: Embedder args string for code matching
+        embedder_args: Embedder args dict for code matching
         generator: Model for generation
         verifier: Model for verification
         sampler: Model for sampling
@@ -307,18 +311,13 @@ async def synthesize_cohort_with_state_file(
     if state_file and pathlib.Path(state_file).exists():
         with open(state_file, "r") as f:
             state = json.load(f)
-        # If resuming from state, reconstruct embedder if not present
-        if state and "embedder" not in state:
-            from .embed import create_embedder
 
-            state["embedder"] = create_embedder(
-                state["embedder_model"], state.get("embedder_args", "")
-            )
     while True:
         result = await synthesize_cohort(
             cohort_specs=cohort_specs,
             chroma_db=chroma_db,
             embedder_model=embedder_model,
+            embedder_batch_size=embedder_batch_size,
             embedder_args=embedder_args,
             generator=generator,
             verifier=verifier,
@@ -350,12 +349,12 @@ async def _handle_sampling_stage(
     for spec in cohort_specs:
         record_type = spec.record_type.value
         csv_path = _get_csv_path(record_type)
-        stats = sample_patient_stats(csv_path, spec["count"])
+        stats = sample_patient_stats(csv_path, spec.count)
         duration = stats[0]["duration"]  # assuming same duration for cohort
         sampled = await sample_individual_descriptions(
-            spec["positive"],
-            spec["negative"],
-            spec["count"],
+            spec.positive,
+            spec.negative,
+            spec.count,
             duration,
             sampler,
         )

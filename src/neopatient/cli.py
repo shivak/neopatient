@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import json
 import logging
 import pathlib
 import sys
@@ -58,8 +59,15 @@ async def _main():
     )
     single_parser.add_argument(
         "--embedder-args",
-        default="",
-        help="Comma-separated key=value pairs for embedder configuration",
+        type=json.loads,
+        default={},
+        help="JSON dict for embedder configuration",
+    )
+    single_parser.add_argument(
+        "--embedder-batch-size",
+        type=int,
+        default=128,
+        help="Batch size for embedding operations",
     )
 
     # Cohort subcommand
@@ -119,14 +127,29 @@ async def _main():
     )
     cohort_parser.add_argument(
         "--embedder-args",
-        default="",
-        help="Comma-separated key=value pairs for embedder configuration",
+        type=json.loads,
+        default={},
+        help="JSON dict for embedder configuration",
+    )
+    cohort_parser.add_argument(
+        "--embedder-batch-size",
+        type=int,
+        default=128,
+        help="Batch size for embedding operations",
     )
 
     args = parser.parse_args()
 
     if not args.command:
         parser.print_help()
+        sys.exit(1)
+
+    # Validate embedder_batch_size
+    if args.embedder_batch_size <= 0:
+        print(
+            f"Error: --embedder-batch-size must be a positive integer, got {args.embedder_batch_size}",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     # Configure logging
@@ -147,6 +170,7 @@ async def _main():
                 patient_id=1,
                 chroma_db=chroma_db,
                 embedder_model=args.embedder,
+                embedder_batch_size=args.embedder_batch_size,
                 embedder_args=args.embedder_args,
                 seed=args.seed,
                 generator=args.generator,
@@ -175,6 +199,7 @@ async def _main():
                 cohort_specs=cohort_specs,
                 chroma_db=chroma_db,
                 embedder_model=args.embedder,
+                embedder_batch_size=args.embedder_batch_size,
                 embedder_args=args.embedder_args,
                 generator=args.generator,
                 verifier=args.verifier,
