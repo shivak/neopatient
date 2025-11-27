@@ -180,7 +180,11 @@ async def synthesize_patient(
     record = records[0]
 
     # Step 3: Verify the record satisfies cohort-level positive and negative descriptions (cohort-level, but description includes negatives)
-    record_tsv = record.to_pandas().to_csv(sep="\t", index=False)
+    record_tsv = (
+        record.to_pandas()
+        .drop(columns=["subject_id", "text_value"], errors="ignore")
+        .to_csv(sep="\t", index=False)
+    )
     ver_prompt = VERIFICATION_TEMPLATE.render(
         record_tsv=record_tsv, positive=positive, negative=negative
     )
@@ -538,7 +542,11 @@ async def _start_verification_stage(
         negative = spec.negative
 
         for record_idx, record in enumerate(cohort_records):
-            record_tsv = record.to_pandas().to_csv(sep="\t", index=False)
+            record_tsv = (
+                record.to_pandas()
+                .drop(columns=["subject_id", "text_value"], errors="ignore")
+                .to_csv(sep="\t", index=False)
+            )
             prompt = VERIFICATION_TEMPLATE.render(
                 record_tsv=record_tsv, positive=positive, negative=negative
             )

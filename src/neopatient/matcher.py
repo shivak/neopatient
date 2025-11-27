@@ -8,7 +8,7 @@ import datetime
 
 
 def _format_code(code_system: CodeSystem, code: str) -> str:
-    return f"{code_system}//{code}"
+    return f"{code_system.value}//{code}"
 
 
 def _convert_time(time_str: str) -> datetime.datetime:
