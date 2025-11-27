@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import random
 import string
@@ -103,6 +104,7 @@ async def synthesize_patient(
     Raises:
         ValueError: If the generated record does not satisfy the cohort criteria
     """
+    logger = logging.getLogger(__name__)
     chroma_client = resolve_chroma_client(chroma_db)
     client = AsyncOpenAI()  # Assume API key is set via environment
     embedder = create_embedder(embedder_model, embedder_batch_size, embedder_args)
@@ -133,6 +135,7 @@ async def synthesize_patient(
         end_date=end_date,
         avg_codes_per_time=avg_codes_per_time,
     )
+    logger.info(f"Generation prompt: {prompt}")
     response = await client.chat.completions.create(
         model=generator,
         messages=[{"role": "user", "content": prompt}],
@@ -148,6 +151,7 @@ async def synthesize_patient(
         temperature=0.7,
     )
     content = response.choices[0].message.content
+    logger.info(f"Generation response: {content}")
     print(content)
     if content is None:
         raise ValueError("LLM response content is None")
@@ -180,6 +184,7 @@ async def synthesize_patient(
     ver_prompt = VERIFICATION_TEMPLATE.render(
         record_tsv=record_tsv, positive=positive, negative=negative
     )
+    logger.info(f"Verification prompt: {ver_prompt}")
     ver_response = await client.chat.completions.create(
         model=verifier,
         messages=[{"role": "user", "content": ver_prompt}],
@@ -194,9 +199,9 @@ async def synthesize_patient(
         #        seed=seed,
         temperature=0.0,
     )
-    verification = VerificationResponse.model_validate_json(
-        ver_response.choices[0].message.content
-    )
+    ver_content = ver_response.choices[0].message.content
+    logger.info(f"Verification response: {ver_content}")
+    verification = VerificationResponse.model_validate_json(ver_content)
 
     # Step 4: Check satisfaction
     if not verification.satisfactory:

@@ -22,6 +22,12 @@ async def _main():
     add_generation_args(single_parser)
     single_parser.set_defaults(embedder_args={"model_kwargs": {"dtype": "bfloat16"}})
     single_parser.add_argument(
+        "--log-level",
+        default="WARNING",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set logging level",
+    )
+    single_parser.add_argument(
         "--end-date",
         default=None,
         help="End date for the record (ISO string), defaults to current time",
@@ -34,6 +40,12 @@ async def _main():
     add_embedder_args(cohort_parser)
     add_generation_args(cohort_parser)
     cohort_parser.set_defaults(embedder="sentence-transformers/all-MiniLM-L6-v2")
+    cohort_parser.add_argument(
+        "--log-level",
+        default="WARNING",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set logging level",
+    )
     cohort_parser.add_argument(
         "--size", type=int, required=True, help="Size of the cohort"
     )
@@ -68,7 +80,9 @@ async def _main():
 
     # Configure logging
     logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(message)s", datefmt="%H:%M:%S"
+        level=getattr(logging, args.log_level.upper()),
+        format="%(asctime)s - %(message)s",
+        datefmt="%H:%M:%S",
     )
     logger = logging.getLogger(__name__)
 
