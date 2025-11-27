@@ -20,9 +20,9 @@ async def match_codes_in_system(
     descriptions: list[str],
     chroma_client: ClientAPI,
     embedder: Embed,
-) -> list[tuple[CodeSystem, str, str]]:
+) -> list[tuple[CodeSystem, str]]:
     """
-    Find the best matching medical codes and descriptions for multiple descriptions in a single batch operation.
+    Find the best matching medical codes for multiple descriptions in a single batch operation.
 
     Args:
         coding_system (CodeSystem): The medical coding system
@@ -30,7 +30,7 @@ async def match_codes_in_system(
         chroma_client (ClientAPI): The ChromaDB client
 
     Returns:
-        List[Tuple[CodeSystem, str, str]]: List of tuples containing (code_system, code, description) for each input description.
+        List[Tuple[CodeSystem, str]]: List of tuples containing (code_system, code) for each input description.
     """
     if not descriptions:
         return []
@@ -45,20 +45,14 @@ async def match_codes_in_system(
     async for batch in embedder(descriptions):
         query_embs.extend(batch)
 
-    if not query_embs:
-        return []
-
     # Perform batch search
-    results = collection.query(
-        query_embeddings=query_embs, n_results=1, include=["documents"]
-    )
+    results = collection.query(query_embeddings=query_embs, n_results=1)
 
     # Process results
     matched_results = []
     for i in range(len(descriptions)):
         code = results["ids"][i][0]
-        document = results["documents"][i][0]
-        matched_results.append((coding_system, code, document))
+        matched_results.append((coding_system, code))
 
     return matched_results
 
@@ -67,7 +61,7 @@ async def match_codes(
     queries: List[Tuple[CodeSystem, str]],
     chroma_client: ClientAPI,
     embedder: Embed,
-) -> List[Tuple[CodeSystem, str, str]]:
+) -> List[Tuple[CodeSystem, str]]:
     """
     Find the best matching medical codes for multiple (coding_system, description) pairs.
     Groups queries by coding system for optimal batch processing.
@@ -77,7 +71,7 @@ async def match_codes(
         chroma_client (chromadb.PersistentClient): The ChromaDB client
 
     Returns:
-        List[Tuple[CodeSystem, str, str]]: List of (code_system, code, description) tuples in the same order as input queries
+        List[Tuple[CodeSystem, str]]: List of (code_system, code) tuples in the same order as input queries
     """
     if not queries:
         return []
@@ -148,7 +142,7 @@ async def code_patient(
                     }
                 )
                 for row in events:
-                    code_system, code, matched_desc = batch_results[idx]
+                    code_system, code = batch_results[idx]
                     rows.append(
                         {
                             "subject_id": patient_id,
@@ -163,7 +157,7 @@ async def code_patient(
             else:
                 # Regular events with time_str
                 for row in events:
-                    code_system, code, matched_desc = batch_results[idx]
+                    code_system, code = batch_results[idx]
                     rows.append(
                         {
                             "subject_id": patient_id,
