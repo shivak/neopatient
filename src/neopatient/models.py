@@ -49,7 +49,6 @@ class Event(BaseModel):
     )
     numeric_value: float | None = Field(description="numeric result if applicable")
     unit: str | None = Field(description="unit for the numeric_value if applicable")
-    text_value: str | None = Field(description="text result if applicable")
 
 
 class UncodedPatient(RootModel[Dict[str, List[Event]]]):
@@ -65,7 +64,7 @@ class GenerationResponse(BaseModel):
     records: UncodedPatient = Field(description="The generated patient records")
 
 
-FlatEvent = tuple[CodeSystem, str, float | None, str | None, str | None]
+FlatEvent = tuple[CodeSystem, str, float | None, str | None]
 FlatUncodedPatient = Dict[str, List[FlatEvent]]
 
 

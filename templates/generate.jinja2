@@ -1,6 +1,6 @@
 Generate a longitudinal record for this specific synthetic patient: {{individual_description}}
 
-* your output should be a JSON object: {"finished": true/false, "records": {time: [[code_system, code_desc, numeric_value, unit, text_value], ...], ...}}
+* your output should be a JSON object: {"finished": true/false, "records": {time: [[code_system, code_desc, numeric_value, unit], ...], ...}}
 * generate events sequentially by time, building the record incrementally
 * set "finished": true only if you have completed the full record spanning from {{start_date}} to {{end_date}}; otherwise set "finished": false
 * time: string key (ISO timestamp to appropriate precision; use date precision (YYYY-MM-DD) for claims and EHR outpatient, datetime for EHR inpatient; use patient's birthday for static/person-level measurements)
@@ -8,7 +8,7 @@ Generate a longitudinal record for this specific synthetic patient: {{individual
 * code_desc: brief textual description of the measurement/event (not the code itself)
 * numeric_value: numeric result if applicable, else null
 * unit: unit for the numeric_value if applicable, else null
-* text_value: text result if applicable, else null (reserved for text measurements)
+
 * include static measurements for gender, race, and ethnicity
 * begin the trajectory on their birthday with birth-related descriptions
 * the record should span from {{start_date}} to {{end_date}} (ISO timestamps)
@@ -21,45 +21,45 @@ Generate a longitudinal record for this specific synthetic patient: {{individual
 {
   "finished": true,
   "records": {
-    "2000-05-15": [
-      ["icd9", "Gender (Female)", null, null, null],
-      ["icd9", "Race (White)", null, null, null]
-    ],
-    "2025-10-05": [
-      ["cpt", "Office or other outpatient visit for the evaluation and management of an established patient", null, null, null],
-      ["ndc", "Lisinopril 10 MG Oral Tablet", 1.0, "tablet", null],
-      ["icd10", "Essential (primary) hypertension", null, null, null]
-    ]
+     "2000-05-15": [
+       ["icd9", "Gender (Female)", null, null],
+       ["icd9", "Race (White)", null, null]
+     ],
+     "2025-10-05": [
+       ["cpt", "Office or other outpatient visit for the evaluation and management of an established patient", null, null],
+       ["ndc", "Lisinopril 10 MG Oral Tablet", 1.0, "tablet"],
+       ["icd10", "Essential (primary) hypertension", null, null]
+     ]
   }
 }
 {% elif record_type == 'ehr-inpatient' %}
 {
   "finished": true,
   "records": {
-    "2000-05-15T14:20": [
-      ["snomed", "Gender (Female)", null, null, null],
-      ["snomed", "Race (White)", null, null, null]
-    ],
-    "2025-10-05T09:30": [
-      ["lnc", "Platelets [#/volume] in Blood", 4500.0, "/uL", null],
-      ["lnc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL", null],
-      ["icd10", "Essential (primary) hypertension", null, null, null]
-    ]
+     "2000-05-15T14:20": [
+       ["snomed", "Gender (Female)", null, null],
+       ["snomed", "Race (White)", null, null]
+     ],
+     "2025-10-05T09:30": [
+       ["lnc", "Platelets [#/volume] in Blood", 4500.0, "/uL"],
+       ["lnc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
+       ["icd10", "Essential (primary) hypertension", null, null]
+     ]
   }
 }
 {% elif record_type == 'ehr-outpatient' %}
 {
   "finished": true,
   "records": {
-    "2000-05-15": [
-      ["snomed", "Gender (Female)", null, null, null],
-      ["snomed", "Race (White)", null, null, null]
-    ],
-    "2025-10-05": [
-      ["lnc", "Platelets [#/volume] in Blood", 4500.0, "/uL", null],
-      ["lnc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL", null],
-      ["icd10", "Essential (primary) hypertension", null, null, null]
-    ]
+     "2000-05-15": [
+       ["snomed", "Gender (Female)", null, null],
+       ["snomed", "Race (White)", null, null]
+     ],
+     "2025-10-05": [
+       ["lnc", "Platelets [#/volume] in Blood", 4500.0, "/uL"],
+       ["lnc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
+       ["icd10", "Essential (primary) hypertension", null, null]
+     ]
   }
 }
 {% endif %}

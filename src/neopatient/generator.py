@@ -161,7 +161,6 @@ async def synthesize_patient(
                     code_desc=e[1],
                     numeric_value=e[2],
                     unit=e[3],
-                    text_value=e[4],
                 )
                 for e in events
             ]
@@ -715,7 +714,6 @@ def _parse_generation_results(
                                 code_desc=e[1],
                                 numeric_value=e[2],
                                 unit=e[3],
-                                text_value=e[4],
                             )
                             for e in events
                         ]

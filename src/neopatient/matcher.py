@@ -132,7 +132,6 @@ async def code_patient(
                         "code": "MEDS_BIRTH",
                         "numeric_value": None,
                         "unit": None,
-                        "text_value": None,
                     }
                 )
                 for row in events:
@@ -144,7 +143,6 @@ async def code_patient(
                             "code": code,
                             "numeric_value": row.numeric_value,
                             "unit": row.unit,
-                            "text_value": row.text_value,
                         }
                     )
                     idx += 1
@@ -160,7 +158,6 @@ async def code_patient(
                             "code": code,
                             "numeric_value": row.numeric_value,
                             "unit": row.unit,
-                            "text_value": row.text_value,
                         }
                     )
                     idx += 1
