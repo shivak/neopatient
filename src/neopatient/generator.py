@@ -49,6 +49,55 @@ GENERATION_TEMPLATE = load_template(_generate_template_path)
 VERIFICATION_TEMPLATE = load_template(_verify_template_path)
 
 
+def create_verification_prompt(record: Patient, positive: str, negative: str) -> str:
+    """Create a verification prompt for a patient record."""
+    record_tsv = (
+        record.to_pandas()
+        .drop(columns=["subject_id", "text_value"], errors="ignore")
+        .to_csv(sep="\t", index=False)
+    )
+    return VERIFICATION_TEMPLATE.render(
+        record_tsv=record_tsv, positive=positive, negative=negative
+    )
+
+
+def _generate_salt() -> str:
+    """Generate a random salt string for batch request IDs."""
+    return "".join(random.choices(string.ascii_letters + string.digits, k=8))
+
+
+def create_generation_prompts(
+    record_type: str, recipes: List[PatientRecipe]
+) -> List[str]:
+    """Create generation prompts from PatientRecipe objects, handling stats sampling internally."""
+    count = len(recipes)
+    csv_path = _get_csv_path(record_type)
+    stats = sample_patient_stats(csv_path, count)
+
+    prompts = []
+    for recipe, stat in zip(recipes, stats):
+        # Format dates
+        start_iso = recipe.start_date.isoformat()
+        end_iso = recipe.end_date.isoformat()
+        if record_type in ["claims", "ehr-outpatient"]:
+            formatted_start = start_iso.split("T")[0]
+            formatted_end = end_iso.split("T")[0]
+        else:
+            formatted_start = start_iso
+            formatted_end = end_iso
+
+        prompt = GENERATION_TEMPLATE.render(
+            individual_description=recipe.description,
+            record_type=record_type,
+            start_date=formatted_start,
+            end_date=formatted_end,
+            avg_codes_per_time=stat["avg_codes_per_time"],
+        )
+        prompts.append(prompt)
+
+    return prompts
+
+
 def _get_csv_path(record_type: str) -> str:
     if record_type == "ehr-inpatient":
         return os.path.join(_project_root, "stats", "ehr-inpatient.csv")
@@ -111,13 +160,12 @@ async def synthesize_patient(
 
     print(f"Generating record using: {generator}")
 
-    # Sample stats
+    if end_date is None:
+        end_date = datetime.datetime.now().isoformat()
+    # Sample stats for duration calculation
     csv_path = _get_csv_path(record_type)
     stat = sample_patient_stats(csv_path, 1)[0]
     duration = stat["duration"]
-    avg_codes_per_time = stat["avg_codes_per_time"]
-    if end_date is None:
-        end_date = datetime.datetime.now().isoformat()
     days = int(duration.split()[0])
     start_date = (
         datetime.datetime.fromisoformat(end_date) - datetime.timedelta(days=days)
@@ -125,16 +173,16 @@ async def synthesize_patient(
     if record_type in ["claims", "ehr-outpatient"]:
         start_date = start_date.split("T")[0]  # Truncate to YYYY-MM-DD
         end_date = end_date.split("T")[0]  # Truncate to YYYY-MM-DD
-    individual_description = positive
+
+    recipe = PatientRecipe(
+        description=positive,
+        start_date=datetime.datetime.fromisoformat(start_date),
+        end_date=datetime.datetime.fromisoformat(end_date),
+    )
 
     # Step 1: Generate tuples with LLM
-    prompt = GENERATION_TEMPLATE.render(
-        individual_description=individual_description,
-        record_type=record_type,
-        start_date=start_date,
-        end_date=end_date,
-        avg_codes_per_time=avg_codes_per_time,
-    )
+    prompts = create_generation_prompts(record_type, [recipe])
+    prompt = prompts[0]
     logger.info(f"Generation prompt: {prompt}")
     response = await client.chat.completions.create(
         model=generator,
@@ -180,14 +228,7 @@ async def synthesize_patient(
     record = records[0]
 
     # Step 3: Verify the record satisfies cohort-level positive and negative descriptions (cohort-level, but description includes negatives)
-    record_tsv = (
-        record.to_pandas()
-        .drop(columns=["subject_id", "text_value"], errors="ignore")
-        .to_csv(sep="\t", index=False)
-    )
-    ver_prompt = VERIFICATION_TEMPLATE.render(
-        record_tsv=record_tsv, positive=positive, negative=negative
-    )
+    ver_prompt = create_verification_prompt(record, positive, negative)
     logger.info(f"Verification prompt: {ver_prompt}")
     ver_response = await client.chat.completions.create(
         model=verifier,
@@ -411,25 +452,11 @@ async def _handle_generation_stage(
 
     for cohort_idx, sampled in enumerate(state["sampled_descriptions"]):
         spec = cohort_specs[cohort_idx]
-        record_type = spec.record_type.value
-        csv_path = _get_csv_path(record_type)
-        stats = sample_patient_stats(csv_path, spec["count"])
-        for (patient_id, pr), stat in zip(sampled.items(), stats):
-            avg_codes_per_time = stat["avg_codes_per_time"]
-            individual_description = pr.description
-            start_date_str = pr.start_date.isoformat()
-            end_date_str = pr.end_date.isoformat()
-            if record_type in ["claims", "ehr-outpatient"]:
-                start_date_str = start_date_str.split("T")[0]  # Truncate to YYYY-MM-DD
-                end_date_str = end_date_str.split("T")[0]  # Truncate to YYYY-MM-DD
-            prompt = GENERATION_TEMPLATE.render(
-                individual_description=individual_description,
-                record_type=record_type,
-                start_date=start_date_str,
-                end_date=end_date_str,
-                avg_codes_per_time=avg_codes_per_time,
-            )
-            salt = "".join(random.choices(string.ascii_letters + string.digits, k=8))
+        recipes = list(sampled.values())
+        patient_ids = list(sampled.keys())
+        prompts = create_generation_prompts(spec.record_type.value, recipes)
+        for patient_id, prompt in zip(patient_ids, prompts):
+            salt = _generate_salt()
 
             batch_requests.append(
                 {
@@ -542,15 +569,8 @@ async def _start_verification_stage(
         negative = spec.negative
 
         for record_idx, record in enumerate(cohort_records):
-            record_tsv = (
-                record.to_pandas()
-                .drop(columns=["subject_id", "text_value"], errors="ignore")
-                .to_csv(sep="\t", index=False)
-            )
-            prompt = VERIFICATION_TEMPLATE.render(
-                record_tsv=record_tsv, positive=positive, negative=negative
-            )
-            salt = "".join(random.choices(string.ascii_letters + string.digits, k=8))
+            prompt = create_verification_prompt(record, positive, negative)
+            salt = _generate_salt()
 
             batch_requests.append(
                 {
@@ -568,28 +588,6 @@ async def _start_verification_stage(
                                 "schema": VerificationResponse.model_json_schema(),
                             },
                         },
-                    },
-                }
-            )
-            salt = "".join(random.choices(string.ascii_letters + string.digits, k=8))
-
-            batch_requests.append(
-                {
-                    "custom_id": f"verify_cohort_{cohort_idx}_patient_{record_idx}_{salt}",
-                    "method": "POST",
-                    "url": "/v1/chat/completions",
-                    "body": {
-                        "model": state.get("verifier"),
-                        "messages": [{"role": "user", "content": prompt}],
-                        "response_format": {
-                            "type": "json_schema",
-                            "json_schema": {
-                                "name": "verification_response",
-                                "strict": True,
-                                "schema": VerificationResponse.model_json_schema(),
-                            },
-                        },
-                        "temperature": 0.0,
                     },
                 }
             )
