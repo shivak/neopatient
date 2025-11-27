@@ -2,15 +2,20 @@ Generate {{n}} individual patient recipes that satisfy the following positive co
 
 Each recipe must also explicitly specify what the individual should NOT be like, based on the negative cohort description: "{{negative_cohort}}"
 
-* Each recipe should include a start_date, end_date, and description.
-* The record duration should be approximately {{duration}}.
+* Each recipe should include start_date, end_date, description, and stats (total_codes, unique_codes, duration, num_times, avg_codes_per_time).
 * Each description should be self-contained, including demographics, conditions, and any relevant details.
 * Assign unique patient IDs. By default, these should be random-looking (not sequential) but heed the cohort descriptions about what the IDs should be.
-* Output as JSON object: {(patient id): {"start_date": "ISO datetime", "end_date": "ISO datetime", "description": "text"}, ...}
+* Use the advisory examples of stats from similar records to guide your choices, but generate appropriate final values for each recipe.
+* Output as JSON object: {(patient id): PatientRecipe}, ...}
+
+Here are advisory examples of stats from similar records:
+{% for stat in stats %}
+- total_codes: {{ stat.total_codes }}, unique_codes: {{ stat.unique_codes }}, duration: {{ stat.duration }}, num_times: {{ stat.num_times }}, avg_codes_per_time: {{ stat.avg_codes_per_time }}
+{% endfor %}
 
 --- example output ---
 
 {
-  532114084: {"start_date": "2000-01-01T00:00:00", "end_date": "2020-01-01T00:00:00", "description": "A 45-year-old female with hypertension but not diabetes, Caucasian, outpatient visits every 6 months."},
-  381018197: {"start_date": "1990-01-01T00:00:00", "end_date": "2020-01-01T00:00:00", "description": "A 30-year-old male with asthma but not allergies, African American, emergency visits annually."}
+  532114084: {"start_date": "2000-01-01T00:00:00", "end_date": "2020-01-01T00:00:00", "description": "A 45-year-old female with hypertension but not diabetes, Caucasian, outpatient visits every 6 months.", "total_codes": 150, "unique_codes": 50, "duration": "7300 days", "num_times": 20, "avg_codes_per_time": 7.5},
+  381018197: {"start_date": "1990-01-01T00:00:00", "end_date": "2020-01-01T00:00:00", "description": "A 30-year-old male with asthma but not allergies, African American, emergency visits annually.", "total_codes": 200, "unique_codes": 60, "duration": "10950 days", "num_times": 30, "avg_codes_per_time": 6.7}
 }

@@ -28,7 +28,7 @@ from .models import (
     Event,
     CohortSpec,
 )
-from .sampler import sample_individual_descriptions
+from .sampler import sample_recipes, sample_recipe
 
 
 # Load Jinja2 template from file
@@ -69,13 +69,9 @@ def _generate_salt() -> str:
 def create_generation_prompts(
     record_type: str, recipes: List[PatientRecipe]
 ) -> List[str]:
-    """Create generation prompts from PatientRecipe objects, handling stats sampling internally."""
-    count = len(recipes)
-    csv_path = _get_csv_path(record_type)
-    stats = sample_patient_stats(csv_path, count)
-
+    """Create generation prompts from PatientRecipe objects."""
     prompts = []
-    for recipe, stat in zip(recipes, stats):
+    for recipe in recipes:
         # Format dates
         start_iso = recipe.start_date.isoformat()
         end_iso = recipe.end_date.isoformat()
@@ -91,25 +87,11 @@ def create_generation_prompts(
             record_type=record_type,
             start_date=formatted_start,
             end_date=formatted_end,
-            avg_codes_per_time=stat["avg_codes_per_time"],
+            avg_codes_per_time=recipe.avg_codes_per_time,
         )
         prompts.append(prompt)
 
     return prompts
-
-
-def _get_csv_path(record_type: str) -> str:
-    if record_type == "ehr-inpatient":
-        return os.path.join(_project_root, "stats", "ehr-inpatient.csv")
-    else:
-        return os.path.join(_project_root, "stats", "ehr-outpatient.csv")
-
-
-def sample_patient_stats(csv_path: str, n: int) -> List[Dict[str, Any]]:
-    """Sample n rows with replacement from CSV, returning list of dicts."""
-    df = pd.read_csv(csv_path)
-    sampled_df = df.sample(n=n, replace=True)
-    return sampled_df.to_dict("records")
 
 
 async def synthesize_patient(
@@ -162,23 +144,7 @@ async def synthesize_patient(
 
     if end_date is None:
         end_date = datetime.datetime.now().isoformat()
-    # Sample stats for duration calculation
-    csv_path = _get_csv_path(record_type)
-    stat = sample_patient_stats(csv_path, 1)[0]
-    duration = stat["duration"]
-    days = int(duration.split()[0])
-    start_date = (
-        datetime.datetime.fromisoformat(end_date) - datetime.timedelta(days=days)
-    ).isoformat()
-    if record_type in ["claims", "ehr-outpatient"]:
-        start_date = start_date.split("T")[0]  # Truncate to YYYY-MM-DD
-        end_date = end_date.split("T")[0]  # Truncate to YYYY-MM-DD
-
-    recipe = PatientRecipe(
-        description=positive,
-        start_date=datetime.datetime.fromisoformat(start_date),
-        end_date=datetime.datetime.fromisoformat(end_date),
-    )
+    recipe = sample_recipe(positive, record_type, end_date)
 
     # Step 1: Generate tuples with LLM
     prompts = create_generation_prompts(record_type, [recipe])
@@ -422,14 +388,11 @@ async def _handle_sampling_stage(
     # Sample for each cohort
     for spec in cohort_specs:
         record_type = spec.record_type.value
-        csv_path = _get_csv_path(record_type)
-        stats = sample_patient_stats(csv_path, spec.count)
-        duration = stats[0]["duration"]  # assuming same duration for cohort
-        sampled = await sample_individual_descriptions(
+        sampled = await sample_recipes(
             spec.positive,
             spec.negative,
             spec.count,
-            duration,
+            record_type,
             sampler,
         )
         state["sampled_descriptions"].append(sampled)

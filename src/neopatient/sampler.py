@@ -1,8 +1,10 @@
 import json
 import os
-from typing import Dict
+from typing import Dict, List, Any, Optional
 from openai import AsyncOpenAI
 import jinja2
+import datetime
+import pandas as pd
 from .models import PatientRecipe
 
 # Get the directory of the current file to construct template path
@@ -15,20 +17,60 @@ SAMPLE_TEMPLATE = jinja2.Template(
 )
 
 
-async def sample_individual_descriptions(
-    positive: str, negative: str, n: int, duration: str, sampler_model: str = "gpt-5"
+def _get_csv_path(record_type: str) -> str:
+    if record_type == "ehr-inpatient":
+        return os.path.join(_project_root, "stats", "ehr-inpatient.csv")
+    else:
+        return os.path.join(_project_root, "stats", "ehr-outpatient.csv")
+
+
+def sample_patient_stats(csv_path: str, n: int) -> List[Dict[str, Any]]:
+    df = pd.read_csv(csv_path)
+    sampled_df = df.sample(n=n, replace=True)
+    return sampled_df.to_dict("records")
+
+
+def sample_recipe(
+    positive: str, record_type: str, end_date: Optional[str] = None
+) -> PatientRecipe:
+    if end_date is None:
+        end_date = datetime.datetime.now().isoformat()
+    csv_path = _get_csv_path(record_type)
+    stat = sample_patient_stats(csv_path, 1)[0]
+    duration = stat["duration"]
+    days = int(duration.split()[0])
+    start_date = (
+        datetime.datetime.fromisoformat(end_date) - datetime.timedelta(days=days)
+    ).isoformat()
+    if record_type in ["claims", "ehr-outpatient"]:
+        start_date = start_date.split("T")[0]
+        end_date = end_date.split("T")[0]
+    return PatientRecipe(
+        description=positive,
+        start_date=datetime.datetime.fromisoformat(start_date),
+        end_date=datetime.datetime.fromisoformat(end_date),
+        total_codes=stat["total_codes"],
+        unique_codes=stat["unique_codes"],
+        duration=stat["duration"],
+        num_times=stat["num_times"],
+        avg_codes_per_time=stat["avg_codes_per_time"],
+    )
+
+
+async def sample_recipes(
+    positive: str, negative: str, n: int, record_type: str, sampler_model: str = "gpt-5"
 ) -> Dict[int, PatientRecipe]:
     """
     Samples individual patient recipes that satisfy cohort criteria.
 
     Uses LLM to generate n self-contained recipes, each including start_date, end_date, and description,
-    constrained by the provided duration.
+    constrained by the sampled duration.
 
     Args:
         positive: Positive cohort description
         negative: Negative anti-cohort description
         n: Number of patients to sample
-        duration: Approximate duration for each patient's record (e.g., "1000 days")
+        record_type: Type of record ("claims", "ehr-inpatient", "ehr-outpatient")
         sampler_model: Model name for sampling (default: "gpt-5")
 
     Returns:
@@ -36,8 +78,11 @@ async def sample_individual_descriptions(
     """
     client = AsyncOpenAI()  # Assume API key is set via environment
 
+    csv_path = _get_csv_path(record_type)
+    stats = sample_patient_stats(csv_path, n)
+
     prompt = SAMPLE_TEMPLATE.render(
-        positive_cohort=positive, negative_cohort=negative, n=n, duration=duration
+        positive_cohort=positive, negative_cohort=negative, n=n, stats=stats
     )
     response = await client.chat.completions.create(
         model=sampler_model,
@@ -47,10 +92,7 @@ async def sample_individual_descriptions(
             "json_schema": {
                 "name": "patient_recipes",
                 "strict": True,
-                "schema": {
-                    "type": "object",
-                    "additionalProperties": PatientRecipe.model_json_schema(),
-                },
+                "schema": PatientRecipe.model_json_schema(),
             },
         },
         temperature=0.7,

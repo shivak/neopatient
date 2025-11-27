@@ -92,11 +92,16 @@ class VerificationResponse(BaseModel):
 
 
 class PatientRecipe(BaseModel):
-    """Recipe for generating a patient record, including dates and description."""
+    """Recipe for generating a patient record, including dates, description, and sampled stats from CSV."""
 
     start_date: datetime
     end_date: datetime
     description: str
+    total_codes: int
+    unique_codes: int
+    duration: str
+    num_times: int
+    avg_codes_per_time: float
 
     @model_validator(mode="after")
     def validate_dates(self):
