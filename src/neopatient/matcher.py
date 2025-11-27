@@ -4,6 +4,15 @@ from .models import CodeSystem, UncodedPatient, Cohort
 from .embed import Embed
 from meds.schema import DataSchema as PatientSchema
 import pyarrow as pa
+import datetime
+
+
+def _format_code(code_system: CodeSystem, code: str) -> str:
+    return f"{code_system}//{code}"
+
+
+def _convert_time(time_str: str) -> datetime.datetime:
+    return datetime.datetime.fromisoformat(time_str)
 
 
 async def match_codes_in_system(
@@ -11,7 +20,7 @@ async def match_codes_in_system(
     descriptions: list[str],
     chroma_client: ClientAPI,
     embedder: Embed,
-) -> list[tuple[str, str]]:
+) -> list[tuple[CodeSystem, str, str]]:
     """
     Find the best matching medical codes and descriptions for multiple descriptions in a single batch operation.
 
@@ -21,7 +30,7 @@ async def match_codes_in_system(
         chroma_client (ClientAPI): The ChromaDB client
 
     Returns:
-        List[Tuple[str, str]]: List of tuples containing (code, description) for each input description.
+        List[Tuple[CodeSystem, str, str]]: List of tuples containing (code_system, code, description) for each input description.
     """
     if not descriptions:
         return []
@@ -36,6 +45,9 @@ async def match_codes_in_system(
     async for batch in embedder(descriptions):
         query_embs.extend(batch)
 
+    if not query_embs:
+        return []
+
     # Perform batch search
     results = collection.query(
         query_embeddings=query_embs, n_results=1, include=["documents"]
@@ -46,7 +58,7 @@ async def match_codes_in_system(
     for i in range(len(descriptions)):
         code = results["ids"][i][0]
         document = results["documents"][i][0]
-        matched_results.append((code, document))
+        matched_results.append((coding_system, code, document))
 
     return matched_results
 
@@ -55,7 +67,7 @@ async def match_codes(
     queries: List[Tuple[CodeSystem, str]],
     chroma_client: ClientAPI,
     embedder: Embed,
-) -> List[Tuple[str | None, str | None]]:
+) -> List[Tuple[CodeSystem, str, str]]:
     """
     Find the best matching medical codes for multiple (coding_system, description) pairs.
     Groups queries by coding system for optimal batch processing.
@@ -65,7 +77,7 @@ async def match_codes(
         chroma_client (chromadb.PersistentClient): The ChromaDB client
 
     Returns:
-        List[Tuple[str, str]]: List of (code, description) tuples in the same order as input queries
+        List[Tuple[CodeSystem, str, str]]: List of (code_system, code, description) tuples in the same order as input queries
     """
     if not queries:
         return []
@@ -77,21 +89,21 @@ async def match_codes(
             system_groups[system] = []
         system_groups[system].append((i, desc))
 
-    # Initialize results list
-    results: List[Tuple[str | None, str | None]] = [
-        (None, None) for _ in range(len(queries))
-    ]
-
-    # Process each coding system in batch
+    # Collect results with indices
+    results_with_indices = []
     for system, system_queries in system_groups.items():
         indices, descriptions = zip(*system_queries)
         batch_results = await match_codes_in_system(
             system, list(descriptions), chroma_client, embedder
         )
 
-        # Map results back to original positions
+        # Collect results with their original indices
         for idx, result in zip(indices, batch_results):
-            results[idx] = result
+            results_with_indices.append((idx, result))
+
+    # Sort by original index and extract results
+    results_with_indices.sort(key=lambda x: x[0])
+    results = [result for _, result in results_with_indices]
 
     return results
 
@@ -102,6 +114,7 @@ async def code_patient(
     embedder: Embed,
 ) -> Cohort:
     """Match code descriptions to standardized codes using ChromaDB and return list of patient records."""
+
     if not patients:
         return []
 
@@ -128,19 +141,19 @@ async def code_patient(
                 rows.append(
                     {
                         "subject_id": patient_id,
-                        "time": time_str,  # Birthday time for MEDS_BIRTH
+                        "time": _convert_time(time_str),  # Birthday time for MEDS_BIRTH
                         "code": "MEDS_BIRTH",
                         "numeric_value": None,
                         "unit": None,
                     }
                 )
                 for row in events:
-                    code, matched_desc = batch_results[idx]
+                    code_system, code, matched_desc = batch_results[idx]
                     rows.append(
                         {
                             "subject_id": patient_id,
                             "time": None,  # Untimestamped for static
-                            "code": code,
+                            "code": _format_code(code_system, code),
                             "numeric_value": row.numeric_value,
                             "unit": row.unit,
                         }
@@ -150,18 +163,17 @@ async def code_patient(
             else:
                 # Regular events with time_str
                 for row in events:
-                    code, matched_desc = batch_results[idx]
+                    code_system, code, matched_desc = batch_results[idx]
                     rows.append(
                         {
                             "subject_id": patient_id,
-                            "time": time_str,
-                            "code": code,
+                            "time": _convert_time(time_str),
+                            "code": _format_code(code_system, code),
                             "numeric_value": row.numeric_value,
                             "unit": row.unit,
                         }
                     )
                     idx += 1
-        print(rows)
         table = pa.Table.from_pylist(rows, schema=PatientSchema.schema())
         cohort.append(table)
 
