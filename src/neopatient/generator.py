@@ -168,20 +168,30 @@ async def synthesize_patient(
     if content is None:
         raise ValueError("LLM response content is None")
     flat_generation_response = FlatGenerationResponse.model_validate_json(content)
+    records = {}
+    for time, events in flat_generation_response.records.items():
+        event_list = []
+        for e in events:
+            if len(e) == 2:
+                code_system, code_desc = e
+                numeric_value = None
+                unit = None
+            elif len(e) == 4:
+                code_system, code_desc, numeric_value, unit = e
+            else:
+                raise ValueError(f"Invalid event tuple length: {len(e)}")
+            event_list.append(
+                Event(
+                    code_system=code_system,
+                    code_desc=code_desc,
+                    numeric_value=numeric_value,
+                    unit=unit,
+                )
+            )
+        records[time] = event_list
     generation_response = GenerationResponse(
         finished=flat_generation_response.finished,
-        records={
-            time: [
-                Event(
-                    code_system=e[0],
-                    code_desc=e[1],
-                    numeric_value=e[2],
-                    unit=e[3],
-                )
-                for e in events
-            ]
-            for time, events in flat_generation_response.records.items()
-        },
+        records=records,
     )
     if not generation_response.finished:
         raise ValueError("Generation not finished, discarding incomplete record")
@@ -677,20 +687,30 @@ def _parse_generation_results(
                 result["response"]["body"]["choices"][0]["message"]["content"]
             )
             if flat_generation_response.finished:
+                records = {}
+                for time, events in flat_generation_response.records.items():
+                    event_list = []
+                    for e in events:
+                        if len(e) == 2:
+                            code_system, code_desc = e
+                            numeric_value = None
+                            unit = None
+                        elif len(e) == 4:
+                            code_system, code_desc, numeric_value, unit = e
+                        else:
+                            raise ValueError(f"Invalid event tuple length: {len(e)}")
+                        event_list.append(
+                            Event(
+                                code_system=code_system,
+                                code_desc=code_desc,
+                                numeric_value=numeric_value,
+                                unit=unit,
+                            )
+                        )
+                    records[time] = event_list
                 generation_response = GenerationResponse(
                     finished=flat_generation_response.finished,
-                    records={
-                        time: [
-                            Event(
-                                code_system=e[0],
-                                code_desc=e[1],
-                                numeric_value=e[2],
-                                unit=e[3],
-                            )
-                            for e in events
-                        ]
-                        for time, events in flat_generation_response.records.items()
-                    },
+                    records=records,
                 )
                 cohort_records[cohort_idx][patient_id] = generation_response.records
 

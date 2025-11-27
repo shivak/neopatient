@@ -1,4 +1,4 @@
-from typing import List, TypedDict, Dict
+from typing import List, TypedDict, Dict, Union
 from enum import Enum
 from datetime import datetime
 from pydantic import BaseModel, RootModel, Field, model_validator
@@ -64,7 +64,9 @@ class GenerationResponse(BaseModel):
     records: UncodedPatient = Field(description="The generated patient records")
 
 
-FlatEvent = tuple[CodeSystem, str, float | None, str | None]
+# FlatEvent is a union to represent events without nulls: 2-tuple for non-numeric events,
+# 4-tuple for numeric events (ensuring unit is always present with numeric_value).
+FlatEvent = Union[tuple[CodeSystem, str], tuple[CodeSystem, str, float, str]]
 FlatUncodedPatient = Dict[str, List[FlatEvent]]
 
 

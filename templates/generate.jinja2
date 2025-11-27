@@ -1,13 +1,13 @@
 Generate a longitudinal record for this specific synthetic patient: {{recipe.description}}
 
-* your output should be a JSON object: {"finished": true/false, "records": {time: [[code_system, code_desc, numeric_value, unit], ...], ...}}
+* your output should be a JSON object: {"finished": true/false, "records": {time: [[code_system, code_desc] or [code_system, code_desc, numeric_value, unit], ...], ...}}
 * generate events sequentially by time, building the record incrementally
 * set "finished": true only if you have completed the full record spanning from {{start_date}} to {{end_date}}; otherwise set "finished": false
 * time: string key (ISO timestamp to appropriate precision; use date precision (YYYY-MM-DD) for claims and EHR outpatient, datetime for EHR inpatient; use patient's birthday for static/person-level measurements)
 * code_system: the vocabulary system for this code (must be one of: {% if record_type == 'claims' %}icd9_proc, icd10_proc, cpt, icd9, ndc, icd10{% elif record_type in ['ehr-inpatient', 'ehr-outpatient'] %}snomed, rxnorm, icd9_proc, lnc, icd10_proc, cpt, icd9, icd10{% endif %})
 * code_desc: brief textual description of the measurement/event (not the code itself)
-* numeric_value: numeric result if applicable, else null
-* unit: unit for the numeric_value if applicable, else null
+* for non-numeric events: output [code_system, code_desc]
+* for numeric events: output [code_system, code_desc, numeric_value, unit] (unit is required when numeric_value is present)
 
 * include static measurements for gender, race, and ethnicity
 * begin the trajectory on their birthday with birth-related descriptions
@@ -21,49 +21,49 @@ Generate a longitudinal record for this specific synthetic patient: {{recipe.des
 
 --- example output ---
 
-{% if record_type == 'claims' %}
+ {% if record_type == 'claims' %}
 {
   "finished": true,
   "records": {
      "2000-05-15": [
-       ["icd9", "Gender (Female)", null, null],
-       ["icd9", "Race (White)", null, null]
+       ["icd9", "Gender (Female)"],
+       ["icd9", "Race (White)"]
      ],
      "2025-10-05": [
-       ["cpt", "Office or other outpatient visit for the evaluation and management of an established patient", null, null],
+       ["cpt", "Office or other outpatient visit for the evaluation and management of an established patient"],
        ["ndc", "Lisinopril 10 MG Oral Tablet", 1.0, "tablet"],
-       ["icd10", "Essential (primary) hypertension", null, null]
+       ["icd10", "Essential (primary) hypertension"]
      ]
   }
 }
-{% elif record_type == 'ehr-inpatient' %}
+ {% elif record_type == 'ehr-inpatient' %}
 {
   "finished": true,
   "records": {
      "2000-05-15T14:20": [
-       ["snomed", "Gender (Female)", null, null],
-       ["snomed", "Race (White)", null, null]
+       ["snomed", "Gender (Female)"],
+       ["snomed", "Race (White)"]
      ],
      "2025-10-05T09:30": [
        ["lnc", "Platelets [#/volume] in Blood", 4500.0, "/uL"],
        ["lnc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
-       ["icd10", "Essential (primary) hypertension", null, null]
+       ["icd10", "Essential (primary) hypertension"]
      ]
   }
 }
-{% elif record_type == 'ehr-outpatient' %}
+ {% elif record_type == 'ehr-outpatient' %}
 {
   "finished": true,
   "records": {
      "2000-05-15": [
-       ["snomed", "Gender (Female)", null, null],
-       ["snomed", "Race (White)", null, null]
+       ["snomed", "Gender (Female)"],
+       ["snomed", "Race (White)"]
      ],
      "2025-10-05": [
        ["lnc", "Platelets [#/volume] in Blood", 4500.0, "/uL"],
        ["lnc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
-       ["icd10", "Essential (primary) hypertension", null, null]
+       ["icd10", "Essential (primary) hypertension"]
      ]
   }
 }
-{% endif %}
+ {% endif %}
