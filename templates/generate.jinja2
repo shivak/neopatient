@@ -1,4 +1,4 @@
-Generate a longitudinal record for this specific synthetic patient: {{individual_description}}
+Generate a longitudinal record for this specific synthetic patient: {{recipe.description}}
 
 * your output should be a JSON object: {"finished": true/false, "records": {time: [[code_system, code_desc, numeric_value, unit], ...], ...}}
 * generate events sequentially by time, building the record incrementally
@@ -12,8 +12,12 @@ Generate a longitudinal record for this specific synthetic patient: {{individual
 * include static measurements for gender, race, and ethnicity
 * begin the trajectory on their birthday with birth-related descriptions
 * the record should span from {{start_date}} to {{end_date}} (ISO timestamps)
-* aim for an average of {{avg_codes_per_time}} codes per timestamp, but allow substantial variation
-* this is {% if record_type == 'claims' %}a claims{% elif record_type == 'ehr-inpatient' %}an EHR inpatient{% elif record_type == 'ehr-outpatient' %}an EHR outpatient{% endif %} record. Only use code systems appropriate for this record type (research-only systems like phecode, atc, and umls_cui are prohibited).
+* Target stats for this record (use these to guide generation):
+  - Total codes: {{recipe.total_codes}} (CRUCIAL - aim for this exact total number of events across the entire record)
+  - Unique codes: {{recipe.unique_codes}} (approximate number of distinct codes to use, allowing some variation)
+  - Duration: {{recipe.duration}} (total time span of the record)
+  - Number of timestamps: {{recipe.num_times}} (expected number of time points, with flexibility)
+  - Average codes per timestamp: {{recipe.avg_codes_per_time}} (target density per time point, but allow substantial variation)
 
 --- example output ---
 

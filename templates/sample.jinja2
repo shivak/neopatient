@@ -2,13 +2,13 @@ Generate {{n}} individual patient recipes that satisfy the following positive co
 
 Each recipe must also explicitly specify what the individual should NOT be like, based on the negative cohort description: "{{negative_cohort}}"
 
-* Each recipe should include start_date, end_date, description, and stats (total_codes, unique_codes, duration, num_times, avg_codes_per_time).
+* Each recipe should include start_date, end_date, description, and code-related target statistics (total codes, number of unique codes, overall duration of the record, number of distinct timestamps, average number of codes per timestamp).
 * Each description should be self-contained, including demographics, conditions, and any relevant details.
 * Assign unique patient IDs. By default, these should be random-looking (not sequential) but heed the cohort descriptions about what the IDs should be.
 * Use the advisory examples of stats from similar records to guide your choices, but generate appropriate final values for each recipe.
 * Output as JSON object: {(patient id): PatientRecipe}, ...}
 
-Here are advisory examples of stats from similar records:
+Here are advisory examples of statistics from similar records:
 {% for stat in stats %}
 - total_codes: {{ stat.total_codes }}, unique_codes: {{ stat.unique_codes }}, duration: {{ stat.duration }}, num_times: {{ stat.num_times }}, avg_codes_per_time: {{ stat.avg_codes_per_time }}
 {% endfor %}

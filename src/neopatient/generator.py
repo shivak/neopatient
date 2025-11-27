@@ -5,14 +5,13 @@ import random
 import string
 import sys
 import time
-from typing import Dict, List, Union, Any
+from typing import Dict, List, Union
 import pathlib
 import datetime
 from openai import AsyncOpenAI
 import jinja2
 
 from chromadb.api import ClientAPI
-import pandas as pd
 from .matcher import code_patient
 from .database import resolve_chroma_client
 from .embed import create_embedder
@@ -83,11 +82,10 @@ def create_generation_prompts(
             formatted_end = end_iso
 
         prompt = GENERATION_TEMPLATE.render(
-            individual_description=recipe.description,
             record_type=record_type,
             start_date=formatted_start,
             end_date=formatted_end,
-            avg_codes_per_time=recipe.avg_codes_per_time,
+            recipe=recipe,
         )
         prompts.append(prompt)
 
