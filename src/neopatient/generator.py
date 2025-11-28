@@ -23,9 +23,9 @@ from .models import (
     Cohort,
     PatientRecipe,
     GenerationResponse,
-    FlatGenerationResponse,
-    Event,
     CohortSpec,
+    CodeSystem,
+    RecordType,
 )
 from .sampler import sample_recipes, sample_recipe
 
@@ -69,6 +69,10 @@ def create_generation_prompts(
     record_type: str, recipes: List[PatientRecipe]
 ) -> List[str]:
     """Create generation prompts from PatientRecipe objects."""
+    # Convert string to enum
+    record_type_enum = RecordType(record_type)
+    allowed_codes = CodeSystem.allowed_in(record_type_enum)
+
     prompts = []
     for recipe in recipes:
         # Format dates
@@ -86,6 +90,7 @@ def create_generation_prompts(
             start_date=formatted_start,
             end_date=formatted_end,
             recipe=recipe,
+            allowed_codes=[cs.value for cs in allowed_codes],
         )
         prompts.append(prompt)
 
@@ -156,7 +161,7 @@ async def synthesize_patient(
             "json_schema": {
                 "name": "generation_response",
                 "strict": True,
-                "schema": FlatGenerationResponse.model_json_schema(),
+                "schema": GenerationResponse.model_json_schema(),
             },
         },
         #        seed=seed,
@@ -164,11 +169,10 @@ async def synthesize_patient(
     )
     content = response.choices[0].message.content
     logger.info(f"Generation response: {content}")
-    flat_generation_response = FlatGenerationResponse.model_validate_json(content)
-    generation_response = flat_generation_response.unflatten()
-    if not generation_response.finished:
+    flat_generation_response = GenerationResponse.model_validate_json(content)
+    if not flat_generation_response.finished:
         raise ValueError("Generation not finished, discarding incomplete record")
-    record_data = generation_response.records
+    record_data = flat_generation_response.records.unflatten()
 
     # Step 2: Match codes and create Patient
     records = await code_patient({patient_id: record_data}, chroma_client, embedder)
@@ -415,7 +419,7 @@ async def _handle_generation_stage(
                             "json_schema": {
                                 "name": "generation_response",
                                 "strict": True,
-                                "schema": FlatGenerationResponse.model_json_schema(),
+                                "schema": GenerationResponse.model_json_schema(),
                             },
                         },
                         "temperature": 1.0,
@@ -656,12 +660,13 @@ def _parse_generation_results(
             custom_id = result["custom_id"]
             cohort_idx = int(custom_id.split("_")[1])
             patient_id = int(custom_id.split("_")[3])
-            flat_generation_response = FlatGenerationResponse.model_validate_json(
+            flat_generation_response = GenerationResponse.model_validate_json(
                 result["response"]["body"]["choices"][0]["message"]["content"]
             )
             if flat_generation_response.finished:
-                generation_response = flat_generation_response.unflatten()
-                cohort_records[cohort_idx][patient_id] = generation_response.records
+                cohort_records[cohort_idx][patient_id] = (
+                    flat_generation_response.records.unflatten()
+                )
 
     return cohort_records
 

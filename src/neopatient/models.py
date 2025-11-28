@@ -22,6 +22,32 @@ class CodeSystem(str, Enum):
     # ATC = "atc"
     # UMLS_CUI = "umls_cui"
 
+    @staticmethod
+    def allowed_in(record_type: "RecordType") -> List["CodeSystem"]:
+        """Return list of allowed code systems for the given record type."""
+        if record_type == RecordType.CLAIMS:
+            return [
+                CodeSystem.ICD9_PROC,
+                CodeSystem.ICD10_PROC,
+                CodeSystem.CPT,
+                CodeSystem.ICD9,
+                CodeSystem.NDC,
+                CodeSystem.ICD10,
+            ]
+        elif record_type in [RecordType.EHR_INPATIENT, RecordType.EHR_OUTPATIENT]:
+            return [
+                CodeSystem.SNOMED,
+                CodeSystem.RXNORM,
+                CodeSystem.ICD9_PROC,
+                CodeSystem.LNC,
+                CodeSystem.ICD10_PROC,
+                CodeSystem.CPT,
+                CodeSystem.ICD9,
+                CodeSystem.ICD10,
+            ]
+        else:
+            raise ValueError(f"Unknown record type: {record_type}")
+
 
 class RecordType(str, Enum):
     """Enumeration of supported record types."""
@@ -57,31 +83,18 @@ class UncodedPatient(RootModel[Dict[str, List[Event]]]):
     pass
 
 
-class GenerationResponse(BaseModel):
-    """Response from generation LLM with finished flag."""
-
-    finished: bool = Field(description="Whether the generation is complete")
-    records: UncodedPatient = Field(description="The generated patient records")
-
-
 # FlatEvent is a union to represent events without nulls: 2-tuple for non-numeric events,
 # 4-tuple for numeric events (ensuring unit is always present with numeric_value).
 FlatEvent = Union[tuple[CodeSystem, str], tuple[CodeSystem, str, float, str]]
-FlatUncodedPatient = Dict[str, List[FlatEvent]]
 
 
-class FlatGenerationResponse(BaseModel):
-    """Flat response from generation LLM with finished flag (events as tuples)."""
+class FlatUncodedPatient(RootModel[Dict[str, List[FlatEvent]]]):
+    """Flat representation of uncoded patient records (events as tuples)."""
 
-    finished: bool = Field(description="Whether the generation is complete")
-    records: FlatUncodedPatient = Field(
-        description="The generated patient records (flat)"
-    )
-
-    def unflatten(self) -> GenerationResponse:
+    def unflatten(self) -> UncodedPatient:
         """Convert flat tuple-based events to structured Event objects."""
         records = {}
-        for time, events in self.records.items():
+        for time, events in self.root.items():
             event_list = []
             for e in events:
                 if len(e) == 2:
@@ -101,10 +114,16 @@ class FlatGenerationResponse(BaseModel):
                     )
                 )
             records[time] = event_list
-        return GenerationResponse(
-            finished=self.finished,
-            records=records,
-        )
+        return UncodedPatient(records)
+
+
+class GenerationResponse(BaseModel):
+    """Response from generation LLM with finished flag (events as tuples)."""
+
+    finished: bool = Field(description="Whether the generation is complete")
+    records: FlatUncodedPatient = Field(
+        description="The generated patient records (flat)"
+    )
 
 
 # Type alias for a single patient's MEDS data table

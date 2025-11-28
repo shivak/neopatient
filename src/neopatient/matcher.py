@@ -41,18 +41,12 @@ async def match_codes_in_system(
         raise ValueError(f"No collection found for coding system: {coding_system}")
 
     # Encode all descriptions using embedder
-    query_embs = []
-    async for batch in embedder(descriptions):
-        query_embs.extend(batch)
-
-    # Perform batch search
-    results = collection.query(query_embeddings=query_embs, n_results=1)
-
-    # Process results
     matched_results = []
-    for i in range(len(descriptions)):
-        code = results["ids"][i][0]
-        matched_results.append((coding_system, code))
+
+    async for embedding_batch in embedder(descriptions):
+      results = collection.query(query_embeddings=embedding_batch, n_results=1, include=[])["ids"]
+      codes = [result[0] for result in results]
+      matched_results.extend([(coding_system, code) for code in codes])
 
     return matched_results
 

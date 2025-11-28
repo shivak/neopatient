@@ -4,7 +4,7 @@ Generate a longitudinal record for this specific synthetic patient: {{recipe.des
 * generate events sequentially by time, building the record incrementally
 * set "finished": true only if you have completed the full record spanning from {{start_date}} to {{end_date}}; otherwise set "finished": false
 * time: string key (ISO timestamp to appropriate precision; use date precision (YYYY-MM-DD) for claims and EHR outpatient, datetime for EHR inpatient; use patient's birthday for static/person-level measurements)
-* code_system: the vocabulary system for this code (must be one of: {% if record_type == 'claims' %}icd9_proc, icd10_proc, cpt, icd9, ndc, icd10{% elif record_type in ['ehr-inpatient', 'ehr-outpatient'] %}snomed, rxnorm, icd9_proc, lnc, icd10_proc, cpt, icd9, icd10{% endif %})
+* code_system: the vocabulary system for this code (must be one of: {{ allowed_codes | join(', ') }})
 * code_desc: brief textual description of the measurement/event (not the code itself)
 * for non-numeric events: output [code_system, code_desc]
 * for numeric events: output [code_system, code_desc, numeric_value, unit] (unit is required when numeric_value is present)
