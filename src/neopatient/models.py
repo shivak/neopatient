@@ -78,6 +78,34 @@ class FlatGenerationResponse(BaseModel):
         description="The generated patient records (flat)"
     )
 
+    def unflatten(self) -> GenerationResponse:
+        """Convert flat tuple-based events to structured Event objects."""
+        records = {}
+        for time, events in self.records.items():
+            event_list = []
+            for e in events:
+                if len(e) == 2:
+                    code_system, code_desc = e
+                    numeric_value = None
+                    unit = None
+                elif len(e) == 4:
+                    code_system, code_desc, numeric_value, unit = e
+                else:
+                    raise ValueError(f"Invalid event tuple length: {len(e)}")
+                event_list.append(
+                    Event(
+                        code_system=code_system,
+                        code_desc=code_desc,
+                        numeric_value=numeric_value,
+                        unit=unit,
+                    )
+                )
+            records[time] = event_list
+        return GenerationResponse(
+            finished=self.finished,
+            records=records,
+        )
+
 
 # Type alias for a single patient's MEDS data table
 type Patient = pa.Table
