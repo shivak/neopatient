@@ -85,12 +85,21 @@ def create_generation_prompts(
             formatted_start = start_iso
             formatted_end = end_iso
 
+        # Compute average time between timestamps in days
+        total_seconds = (recipe.end_date - recipe.start_date).total_seconds()
+        avg_time_between_timestamps = (
+            total_seconds / (24 * 3600 * (recipe.num_times - 1))
+            if recipe.num_times > 1
+            else 0
+        )
+
         prompt = GENERATION_TEMPLATE.render(
             record_type=record_type,
             start_date=formatted_start,
             end_date=formatted_end,
             recipe=recipe,
             allowed_codes=[cs.value for cs in allowed_codes],
+            avg_time_between_timestamps=avg_time_between_timestamps,
         )
         prompts.append(prompt)
 

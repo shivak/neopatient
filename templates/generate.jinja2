@@ -1,8 +1,8 @@
 Generate a longitudinal record for this specific synthetic patient: {{recipe.description}}
 
-* your output should be a JSON object: {"finished": true/false, "records": {time: [[code_system, code_desc] or [code_system, code_desc, numeric_value, unit], ...], ...}}
-* generate events sequentially by time, building the record incrementally
-* set "finished": true only if you have completed the full record spanning from {{start_date}} to {{end_date}}; otherwise set "finished": false
+* your output should be a JSON object: {"records": {time: [[code_system, code_desc] or [code_system, code_desc, numeric_value, unit], ...], ...}, "finished": true/false}
+* generate events sequentially by time
+* set "finished": true only if you have completed the full record spanning from {{start_date}} to {{end_date}} with approximately {{recipe.total_codes}} total events; otherwise set "finished": false
 * time: string key (ISO timestamp to appropriate precision; use date precision (YYYY-MM-DD) for claims and EHR outpatient, datetime for EHR inpatient; use patient's birthday for static/person-level measurements)
 * code_system: the vocabulary system for this code (must be one of: {{ allowed_codes | join(', ') }})
 * code_desc: brief textual description of the measurement/event (not the code itself)
@@ -11,19 +11,17 @@ Generate a longitudinal record for this specific synthetic patient: {{recipe.des
 
 * include static measurements for gender, race, and ethnicity
 * begin the trajectory on their birthday with birth-related descriptions
-* the record should span from {{start_date}} to {{end_date}} (ISO timestamps)
-* Target stats for this record (use these to guide generation):
-  - Total codes: {{recipe.total_codes}} (CRUCIAL - aim for this exact total number of events across the entire record)
-  - Unique codes: {{recipe.unique_codes}} (approximate number of distinct codes to use, allowing some variation)
-  - Duration: {{recipe.duration}} (total time span of the record)
-  - Number of timestamps: {{recipe.num_times}} (expected number of time points, with flexibility)
-  - Average codes per timestamp: {{recipe.avg_codes_per_time}} (target density per time point, but allow substantial variation)
+* the record should span from {{start_date}} to {{end_date}}
+* {{recipe.total_codes}} total events (CRUCIAL! do *not* generate fewer)
+* approximately {{recipe.unique_codes}} distinct codes 
+ * approximately {{recipe.num_times}} time points
+ * average time between timestamps: approximately {{ "%.1f"|format(avg_time_between_timestamps) }} days
+ * {{recipe.avg_codes_per_time}} codes per time point, on average
 
 --- example output ---
 
  {% if record_type == 'claims' %}
 {
-  "finished": true,
   "records": {
      "2000-05-15": [
        ["icd9", "Gender (Female)"],
@@ -34,11 +32,11 @@ Generate a longitudinal record for this specific synthetic patient: {{recipe.des
        ["ndc", "Lisinopril 10 MG Oral Tablet", 1.0, "tablet"],
        ["icd10", "Essential (primary) hypertension"]
      ]
-  }
+  },
+  "finished": true
 }
  {% elif record_type == 'ehr-inpatient' %}
 {
-  "finished": true,
   "records": {
      "2000-05-15T14:20": [
        ["snomed", "Gender (Female)"],
@@ -49,11 +47,11 @@ Generate a longitudinal record for this specific synthetic patient: {{recipe.des
        ["lnc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
        ["icd10", "Essential (primary) hypertension"]
      ]
-  }
+  },
+  "finished": true
 }
  {% elif record_type == 'ehr-outpatient' %}
 {
-  "finished": true,
   "records": {
      "2000-05-15": [
        ["snomed", "Gender (Female)"],
@@ -64,6 +62,7 @@ Generate a longitudinal record for this specific synthetic patient: {{recipe.des
        ["lnc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
        ["icd10", "Essential (primary) hypertension"]
      ]
-  }
+  },
+  "finished": true
 }
  {% endif %}
