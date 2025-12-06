@@ -1,31 +1,29 @@
-Generate a longitudinal record for this specific synthetic patient: {{recipe.description}}
+Generate a segment of longitudinal medical events for this synthetic patient.
+
+Overall patient description: {{recipe.description}}
+
+Segment-specific description: {{segment.description}}
 
 * your output should be a JSON object: {"records": {time: [[code_system, code_desc] or [code_system, code_desc, numeric_value, unit], ...], ...}, "finished": true/false}
-* generate events sequentially by time
-* set "finished": true only if you have completed the full record spanning from {{start_date}} to {{end_date}}; otherwise set "finished": false
-* time: string key (ISO timestamp to appropriate precision; {% if record_type in ['claims', 'ehr-outpatient'] %}use date precision (YYYY-MM-DD){% else %}use datetime precision (YYYY-MM-DDTHH:MM){% endif %} for {{record_type}}; use patient's birthday for static/person-level measurements)
+* generate events sequentially by time for this segment only
+* set "finished": true only if you have completed the full segment spanning from {{start_date}} to {{end_date}}; otherwise set "finished": false
+* time: string key (ISO timestamp to appropriate precision; {% if record_type in ['claims', 'ehr-outpatient'] %}use date precision (YYYY-MM-DD){% else %}use datetime precision (YYYY-MM-DDTHH:MM){% endif %} for {{record_type}})
 * code_system: the vocabulary system for this code (must be one of: {{ allowed_code_systems | join(', ') }})
 * code_desc: brief textual description of the measurement/event (not the code itself)
 * for non-numeric events: output [code_system, code_desc]
 * for numeric events: output [code_system, code_desc, numeric_value, unit] (unit is required when numeric_value is present)
 
-* the first timestamp should be their birthday, with static measurements for gender, race, and ethnicity
-* the rest of the record should span from {{start_date}} to {{end_date}}
-* {{recipe.total_codes}} total events (CRUCIAL! do *not* generate fewer)
-* approximately {{recipe.unique_codes}} distinct codes 
-* approximately {{recipe.num_times}} time points
+* the segment should span from {{start_date}} to {{end_date}}
+* approximately {{segment.num_times * segment.avg_codes_per_time}} total events for this segment (CRUCIAL! do *not* generate fewer)
+* approximately {{segment.num_times}} time points
 * average time between timestamps: approximately {{ "%.1f"|format(avg_time_between_timestamps) }} days
-* {{recipe.avg_codes_per_time}} codes per time point, on average
+* {{segment.avg_codes_per_time}} codes per time point, on average
 
 --- example output ---
 
  {% if record_type == 'claims' %}
 {
   "records": {
-     "2000-05-15": [
-       ["icd9", "Gender (Female)"],
-       ["icd9", "Race (White)"]
-     ],
      "2025-10-05": [
        ["cpt", "Office or other outpatient visit for the evaluation and management of an established patient"],
        ["ndc", "Lisinopril 10 MG Oral Tablet", 1.0, "tablet"],
@@ -37,10 +35,6 @@ Generate a longitudinal record for this specific synthetic patient: {{recipe.des
  {% elif record_type == 'ehr-inpatient' %}
 {
   "records": {
-     "2000-05-15T14:20": [
-       ["snomed", "Gender (Female)"],
-       ["snomed", "Race (White)"]
-     ],
      "2025-10-05T09:30": [
        ["lnc", "Platelets [#/volume] in Blood", 4500.0, "/uL"],
        ["lnc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
@@ -52,10 +46,6 @@ Generate a longitudinal record for this specific synthetic patient: {{recipe.des
  {% elif record_type == 'ehr-outpatient' %}
 {
   "records": {
-     "2000-05-15": [
-       ["snomed", "Gender (Female)"],
-       ["snomed", "Race (White)"]
-     ],
      "2025-10-05": [
        ["lnc", "Platelets [#/volume] in Blood", 4500.0, "/uL"],
        ["lnc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],

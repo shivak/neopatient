@@ -1,7 +1,7 @@
 from typing import List, TypedDict, Dict, Union
 from enum import Enum
 from datetime import datetime
-from pydantic import BaseModel, RootModel, Field, model_validator
+from pydantic import BaseModel, RootModel, Field, model_validator, computed_field
 import pyarrow as pa
 
 
@@ -140,23 +140,72 @@ class VerificationResponse(BaseModel):
     criticism: str
 
 
-class PatientRecipe(BaseModel):
-    """Recipe for generating a patient record, including dates, description, and sampled stats from CSV."""
+class Segment(BaseModel):
+    """A temporal segment of a patient's medical history."""
 
     start_date: datetime
     end_date: datetime
-    birthday: datetime
-    description: str
-    total_codes: int
-    unique_codes: int
     num_times: int
     avg_codes_per_time: float
+    description: str
 
     @model_validator(mode="after")
     def validate_dates(self):
         if self.start_date >= self.end_date:
             raise ValueError("start_date must be before end_date")
         return self
+
+
+class PatientRecipe(BaseModel):
+    """Recipe for generating a patient record, including dates, description, and temporal segments."""
+
+    birthday: datetime
+    description: str
+    gender: str | None = None
+    race: str | None = None
+    ethnicity: str | None = None
+    segments: List[Segment]
+
+    @computed_field
+    def start_date(self) -> datetime:
+        """Overall start date derived from earliest segment."""
+        return min(segment.start_date for segment in self.segments)
+
+    @computed_field
+    def end_date(self) -> datetime:
+        """Overall end date derived from latest segment."""
+        return max(segment.end_date for segment in self.segments)
+
+    @computed_field
+    def total_codes(self) -> int:
+        """Total codes derived from segments."""
+        return sum(
+            int(segment.num_times * segment.avg_codes_per_time)
+            for segment in self.segments
+        )
+
+    @computed_field
+    def num_times(self) -> int:
+        """Total number of times derived from segments."""
+        return sum(segment.num_times for segment in self.segments)
+
+    @computed_field
+    def avg_codes_per_time(self) -> float:
+        """Average codes per time derived from segments."""
+        total_times = sum(segment.num_times for segment in self.segments)
+        if total_times == 0:
+            return 0.0
+        total_codes = sum(
+            int(segment.num_times * segment.avg_codes_per_time)
+            for segment in self.segments
+        )
+        return total_codes / total_times
+
+
+class SamplingResponse(RootModel[Dict[int, PatientRecipe]]):
+    """Response from sampling LLM with patient recipes."""
+
+    pass
 
 
 class State(TypedDict, total=False):

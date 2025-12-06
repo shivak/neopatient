@@ -5,14 +5,14 @@ import random
 import string
 import sys
 import time
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Tuple
 import pathlib
 import datetime
 from openai import AsyncOpenAI
 import jinja2
 
 from chromadb.api import ClientAPI
-from .matcher import code_patient
+from .matcher import code_patient, code_cohort
 from .database import resolve_chroma_client
 from .embed import create_embedder
 from .models import (
@@ -66,42 +66,47 @@ def _generate_salt() -> str:
 
 
 def create_generation_prompts(
-    record_type: str, recipes: List[PatientRecipe]
-) -> List[str]:
-    """Create generation prompts from PatientRecipe objects."""
+    record_type: str, recipes: Dict[int, PatientRecipe]
+) -> List[Tuple[int, str]]:
+    """Create generation prompts from PatientRecipe objects, one per segment.
+
+    Returns list of (patient_id, prompt) tuples.
+    """
     # Convert string to enum
     record_type_enum = RecordType(record_type)
     allowed_code_systems = CodeSystem.allowed_in(record_type_enum)
 
     prompts = []
-    for recipe in recipes:
-        # Format dates
-        start_iso = recipe.start_date.isoformat()
-        end_iso = recipe.end_date.isoformat()
-        if record_type in ["claims", "ehr-outpatient"]:
-            formatted_start = start_iso.split("T")[0]
-            formatted_end = end_iso.split("T")[0]
-        else:
-            formatted_start = start_iso
-            formatted_end = end_iso
+    for patient_id, recipe in recipes.items():
+        for segment in recipe.segments:
+            # Format dates for segment
+            start_iso = segment.start_date.isoformat()
+            end_iso = segment.end_date.isoformat()
+            if record_type in ["claims", "ehr-outpatient"]:
+                formatted_start = start_iso.split("T")[0]
+                formatted_end = end_iso.split("T")[0]
+            else:
+                formatted_start = start_iso
+                formatted_end = end_iso
 
-        # Compute average time between timestamps in days
-        total_seconds = (recipe.end_date - recipe.start_date).total_seconds()
-        avg_time_between_timestamps = (
-            total_seconds / (24 * 3600 * (recipe.num_times - 1))
-            if recipe.num_times > 1
-            else 0
-        )
+            # Compute average time between timestamps in days for segment
+            total_seconds = (segment.end_date - segment.start_date).total_seconds()
+            avg_time_between_timestamps = (
+                total_seconds / (24 * 3600 * (segment.num_times - 1))
+                if segment.num_times > 1
+                else 0
+            )
 
-        prompt = GENERATION_TEMPLATE.render(
-            record_type=record_type,
-            start_date=formatted_start,
-            end_date=formatted_end,
-            recipe=recipe,
-            allowed_code_systems=[cs.value for cs in allowed_code_systems],
-            avg_time_between_timestamps=avg_time_between_timestamps,
-        )
-        prompts.append(prompt)
+            prompt = GENERATION_TEMPLATE.render(
+                record_type=record_type,
+                start_date=formatted_start,
+                end_date=formatted_end,
+                recipe=recipe,
+                segment=segment,
+                allowed_code_systems=[cs.value for cs in allowed_code_systems],
+                avg_time_between_timestamps=avg_time_between_timestamps,
+            )
+            prompts.append((patient_id, prompt))
 
     return prompts
 
@@ -158,34 +163,46 @@ async def synthesize_patient(
     sampled = await sample_recipes(positive, negative, 1, record_type, sampler, logger)
     recipe = next(iter(sampled.values()))
 
-    # Step 1: Generate tuples with LLM
-    prompts = create_generation_prompts(record_type, [recipe])
-    prompt = prompts[0]
-    logger.info(f"Generation prompt: {prompt}")
-    response = await client.chat.completions.create(
-        model=generator,
-        messages=[{"role": "user", "content": prompt}],
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "generation_response",
-                "strict": True,
-                "schema": GenerationResponse.model_json_schema(),
-            },
-        },
-        #        seed=seed,
-        temperature=0.7,
-    )
-    content = response.choices[0].message.content
-    logger.info(f"Generation response: {content}")
-    flat_generation_response = GenerationResponse.model_validate_json(content)
-    if not flat_generation_response.finished:
-        raise ValueError("Generation not finished, discarding incomplete record")
-    record_data = flat_generation_response.records.unflatten()
+    # Step 1: Generate tuples with LLM for each segment
+    prompts = create_generation_prompts(record_type, {patient_id: recipe})
+    segment_prompts = {}
+    for pid, prompt in prompts:
+        segment_prompts.setdefault(pid, []).append(prompt)
+
+    combined_records = {}
+    for pid, prompt_list in segment_prompts.items():
+        for seg_idx, prompt in enumerate(prompt_list):
+            logger.info(f"Generation prompt for segment {seg_idx}: {prompt}")
+            response = await client.chat.completions.create(
+                model=generator,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "generation_response",
+                        "strict": True,
+                        "schema": GenerationResponse.model_json_schema(),
+                    },
+                },
+                #        seed=seed,
+                temperature=0.7,
+            )
+            content = response.choices[0].message.content
+            logger.info(f"Generation response for segment {seg_idx}: {content}")
+            flat_generation_response = GenerationResponse.model_validate_json(content)
+            if not flat_generation_response.finished:
+                raise ValueError(
+                    f"Generation not finished for segment {seg_idx}, discarding incomplete record"
+                )
+            segment_records = flat_generation_response.records.unflatten()
+            # Combine records, assuming no overlapping times
+            combined_records.update(segment_records.root)
+    record_data = UncodedPatient(combined_records)
 
     # Step 2: Match codes and create Patient
-    records = await code_patient({patient_id: record_data}, chroma_client, embedder)
-    record = records[0]
+    record = await code_patient(
+        record_data, recipe, patient_id, chroma_client, embedder
+    )
 
     # Step 3: Verify the record satisfies cohort-level positive and negative descriptions (cohort-level, but description includes negatives)
     ver_prompt = create_verification_prompt(record, positive, negative)
@@ -411,30 +428,37 @@ async def _handle_generation_stage(
         spec = cohort_specs[cohort_idx]
         recipes = list(sampled.values())
         patient_ids = list(sampled.keys())
-        prompts = create_generation_prompts(spec.record_type.value, recipes)
-        for patient_id, prompt in zip(patient_ids, prompts):
-            salt = _generate_salt()
+        prompts = create_generation_prompts(
+            spec.record_type.value, dict(zip(patient_ids, recipes))
+        )
+        segment_prompts = {}
+        for pid, prompt in prompts:
+            segment_prompts.setdefault(pid, []).append(prompt)
 
-            batch_requests.append(
-                {
-                    "custom_id": f"cohort_{cohort_idx}_patient_{patient_id}_{salt}",
-                    "method": "POST",
-                    "url": "/v1/chat/completions",
-                    "body": {
-                        "model": generator,
-                        "messages": [{"role": "user", "content": prompt}],
-                        "response_format": {
-                            "type": "json_schema",
-                            "json_schema": {
-                                "name": "generation_response",
-                                "strict": True,
-                                "schema": GenerationResponse.model_json_schema(),
+        for pid, prompt_list in segment_prompts.items():
+            for seg_idx, prompt in enumerate(prompt_list):
+                salt = _generate_salt()
+
+                batch_requests.append(
+                    {
+                        "custom_id": f"cohort_{cohort_idx}_patient_{pid}_segment_{seg_idx}_{salt}",
+                        "method": "POST",
+                        "url": "/v1/chat/completions",
+                        "body": {
+                            "model": generator,
+                            "messages": [{"role": "user", "content": prompt}],
+                            "response_format": {
+                                "type": "json_schema",
+                                "json_schema": {
+                                    "name": "generation_response",
+                                    "strict": True,
+                                    "schema": GenerationResponse.model_json_schema(),
+                                },
                             },
+                            "temperature": 0.7,
                         },
-                        "temperature": 1.0,
-                    },
-                }
-            )
+                    }
+                )
 
     # Submit batch request
     try:
@@ -505,8 +529,9 @@ async def _handle_matching_stage(
 
     # Apply code matching to all generated records
     state["coded_cohorts"] = []
-    for cohort_dict in state["generated_records"]:
-        matched = await code_patient(cohort_dict, chroma_client, embedder)
+    for cohort_idx, cohort_dict in enumerate(state["generated_records"]):
+        recipes = state["sampled_descriptions"][cohort_idx]
+        matched = await code_cohort(cohort_dict, recipes, chroma_client, embedder)
         state["coded_cohorts"].append(matched)
 
     # Start verification stage
@@ -661,21 +686,34 @@ async def _download_batch_results(client: AsyncOpenAI, file_id: str) -> List[Dic
 def _parse_generation_results(
     results: List[Dict], sampled_descriptions: List[Dict[int, PatientRecipe]]
 ) -> List[Dict[int, UncodedPatient]]:
-    """Parse generation results and organize by cohort."""
+    """Parse generation results and organize by cohort, combining segments."""
     cohort_records = [{} for _ in sampled_descriptions]
+    segment_data = {}  # (cohort_idx, patient_id) -> list of (seg_idx, records)
 
     for result in results:
         if result.get("response", {}).get("status_code") == 200:
             custom_id = result["custom_id"]
-            cohort_idx = int(custom_id.split("_")[1])
-            patient_id = int(custom_id.split("_")[3])
+            parts = custom_id.split("_")
+            cohort_idx = int(parts[1])
+            patient_id = int(parts[3])
+            seg_idx = int(parts[5])  # segment_{seg_idx}
             flat_generation_response = GenerationResponse.model_validate_json(
                 result["response"]["body"]["choices"][0]["message"]["content"]
             )
             if flat_generation_response.finished:
-                cohort_records[cohort_idx][patient_id] = (
-                    flat_generation_response.records.unflatten()
+                key = (cohort_idx, patient_id)
+                if key not in segment_data:
+                    segment_data[key] = []
+                segment_data[key].append(
+                    (seg_idx, flat_generation_response.records.unflatten())
                 )
+
+    # Combine segments for each patient
+    for (cohort_idx, patient_id), segments in segment_data.items():
+        combined_records = {}
+        for seg_idx, records in sorted(segments, key=lambda x: x[0]):  # sort by seg_idx
+            combined_records.update(records.root)
+        cohort_records[cohort_idx][patient_id] = UncodedPatient(combined_records)
 
     return cohort_records
 

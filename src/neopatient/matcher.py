@@ -1,6 +1,6 @@
 from chromadb.api import ClientAPI
 from typing import List, Tuple, Dict
-from .models import CodeSystem, UncodedPatient, Cohort
+from .models import CodeSystem, UncodedPatient, Patient, Cohort, PatientRecipe
 from .embed import Embed
 from meds.schema import DataSchema as PatientSchema
 import pyarrow as pa
@@ -44,9 +44,11 @@ async def match_codes_in_system(
     matched_results = []
 
     async for embedding_batch in embedder(descriptions):
-      results = collection.query(query_embeddings=embedding_batch, n_results=1, include=[])["ids"]
-      codes = [result[0] for result in results]
-      matched_results.extend([(coding_system, code) for code in codes])
+        results = collection.query(
+            query_embeddings=embedding_batch, n_results=1, include=[]
+        )["ids"]
+        codes = [result[0] for result in results]
+        matched_results.extend([(coding_system, code) for code in codes])
 
     return matched_results
 
@@ -97,72 +99,99 @@ async def match_codes(
 
 
 async def code_patient(
-    patients: Dict[int, UncodedPatient],
+    patient: UncodedPatient,
+    recipe: PatientRecipe,
+    patient_id: int,
     chroma_client: ClientAPI,
     embedder: Embed,
-) -> Cohort:
-    """Match code descriptions to standardized codes using ChromaDB and return list of patient records."""
+) -> Patient:
+    """Match code descriptions for a single patient and return MEDS table."""
 
-    if not patients:
-        return []
+    # Collect static queries
+    static_queries = []
+    if recipe.gender:
+        static_queries.append(("snomed", f"Gender ({recipe.gender})"))
+    if recipe.race:
+        static_queries.append(("snomed", f"Race ({recipe.race})"))
+    if recipe.ethnicity:
+        static_queries.append(("snomed", f"Ethnicity ({recipe.ethnicity})"))
 
-    # Collect all descriptions to match
-    queries = [
+    # Collect longitudinal queries
+    longitudinal_queries = [
         (row.code_system, row.code_desc)
-        for record in patients.values()
-        for time_str, events in record.root.items()
+        for time_str, events in patient.root.items()
         for row in events
     ]
 
+    # Combine queries
+    all_queries = static_queries + longitudinal_queries
+
     # Perform batch matching
-    batch_results = await match_codes(queries, chroma_client, embedder)
+    batch_results = await match_codes(all_queries, chroma_client, embedder)
 
-    # Build tables per patient
-    cohort = []
+    # Split results
+    static_results = batch_results[: len(static_queries)]
+    longitudinal_results = batch_results[len(static_queries) :]
+
+    # Build rows
+    rows = []
+
+    # MEDS_BIRTH
+    rows.append(
+        {
+            "subject_id": patient_id,
+            "time": recipe.birthday,
+            "code": "MEDS_BIRTH",
+            "numeric_value": None,
+            "unit": None,
+        }
+    )
+
+    # Static events
+    for (code_system, code_desc), matched_code in zip(static_queries, static_results):
+        rows.append(
+            {
+                "subject_id": patient_id,
+                "time": None,
+                "code": _format_code(CodeSystem(code_system), matched_code),
+                "numeric_value": None,
+                "unit": None,
+            }
+        )
+
+    # Longitudinal events
     idx = 0
-    for patient_id, record in patients.items():
-        rows = []
-        first_entry = True
-        for time_str, events in record.root.items():
-            if first_entry:
-                # Handle birthday: Add MEDS_BIRTH row with time_str, and static events with time=None
-                rows.append(
-                    {
-                        "subject_id": patient_id,
-                        "time": _convert_time(time_str),  # Birthday time for MEDS_BIRTH
-                        "code": "MEDS_BIRTH",
-                        "numeric_value": None,
-                        "unit": None,
-                    }
-                )
-                for row in events:
-                    code_system, code = batch_results[idx]
-                    rows.append(
-                        {
-                            "subject_id": patient_id,
-                            "time": None,  # Untimestamped for static
-                            "code": _format_code(code_system, code),
-                            "numeric_value": row.numeric_value,
-                            "unit": row.unit,
-                        }
-                    )
-                    idx += 1
-                first_entry = False
-            else:
-                # Regular events with time_str
-                for row in events:
-                    code_system, code = batch_results[idx]
-                    rows.append(
-                        {
-                            "subject_id": patient_id,
-                            "time": _convert_time(time_str),
-                            "code": _format_code(code_system, code),
-                            "numeric_value": row.numeric_value,
-                            "unit": row.unit,
-                        }
-                    )
-                    idx += 1
-        table = pa.Table.from_pylist(rows, schema=PatientSchema.schema())
-        cohort.append(table)
+    for time_str, events in patient.root.items():
+        for row in events:
+            matched_code = longitudinal_results[idx]
+            rows.append(
+                {
+                    "subject_id": patient_id,
+                    "time": _convert_time(time_str),
+                    "code": _format_code(row.code_system, matched_code),
+                    "numeric_value": row.numeric_value,
+                    "unit": row.unit,
+                }
+            )
+            idx += 1
 
+    # Create pyarrow table
+    schema = PatientSchema()
+    table = pa.Table.from_pylist(rows, schema=schema)
+    return table
+
+
+async def code_cohort(
+    patients: Dict[int, UncodedPatient],
+    recipes: Dict[int, PatientRecipe],
+    chroma_client: ClientAPI,
+    embedder: Embed,
+) -> Cohort:
+    """Match code descriptions for a cohort of patients and return list of patient records."""
+
+    cohort = []
+    for patient_id, patient in patients.items():
+        recipe = recipes[patient_id]
+        table = await code_patient(patient, recipe, patient_id, chroma_client, embedder)
+        cohort.append(table)
     return cohort

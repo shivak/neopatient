@@ -6,7 +6,7 @@ from openai import AsyncOpenAI
 import jinja2
 import datetime
 import pandas as pd
-from .models import PatientRecipe
+from .models import PatientRecipe, SamplingResponse
 
 # Get the directory of the current file to construct template path
 _current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -72,7 +72,7 @@ async def sample_recipes(
             "json_schema": {
                 "name": "patient_recipes",
                 "strict": True,
-                "schema": PatientRecipe.model_json_schema(),
+                "schema": SamplingResponse.model_json_schema(),
             },
         },
         temperature=0.7,
@@ -82,15 +82,10 @@ async def sample_recipes(
         logger.info(f"Sampling response: {content}")
     if content is None:
         raise ValueError("LLM response content is None")
-    sampled_dict = json.loads(content)
+    sampling_response = SamplingResponse.model_validate_json(content)
 
     # Validate that we have n entries
-    if len(sampled_dict) != n:
-        raise ValueError(f"Expected {n} samples, got {len(sampled_dict)}")
+    if len(sampling_response.root) != n:
+        raise ValueError(f"Expected {n} samples, got {len(sampling_response.root)}")
 
-    # Parse to PatientRecipe
-    result = {}
-    for key, value in sampled_dict.items():
-        result[int(key)] = PatientRecipe.model_validate(value)
-
-    return result
+    return sampling_response.root
