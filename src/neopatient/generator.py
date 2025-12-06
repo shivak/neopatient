@@ -88,14 +88,6 @@ def create_generation_prompts(
                 formatted_start = start_iso
                 formatted_end = end_iso
 
-            # Compute average time between timestamps in days for segment
-            total_seconds = (segment.end_date - segment.start_date).total_seconds()
-            avg_time_between_timestamps = (
-                total_seconds / (24 * 3600 * (segment.num_times - 1))
-                if segment.num_times > 1
-                else 0
-            )
-
             prompt = GENERATION_TEMPLATE.render(
                 record_type=record_type,
                 start_date=formatted_start,
@@ -103,7 +95,6 @@ def create_generation_prompts(
                 recipe=recipe,
                 segment=segment,
                 allowed_code_systems=[cs.value for cs in allowed_code_systems],
-                avg_time_between_timestamps=avg_time_between_timestamps,
             )
             prompts.append((patient_id, prompt))
 
@@ -697,11 +688,11 @@ def _parse_generation_results(
             )
             key = (cohort_idx, patient_id)
             if key not in segment_data:
-                            segment_data[key] = []
+                segment_data[key] = []
             segment_data[key].append(
                 (seg_idx, flat_generation_response.records.unflatten())
-                )
-                
+            )
+
     # Combine segments for each patient
     for (cohort_idx, patient_id), segments in segment_data.items():
         combined_records = {}
