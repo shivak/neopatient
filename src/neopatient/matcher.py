@@ -20,7 +20,7 @@ async def match_codes_in_system(
     descriptions: list[str],
     chroma_client: ClientAPI,
     embedder: Embed,
-) -> list[tuple[CodeSystem, str]]:
+) -> list[str]:
     """
     Find the best matching medical codes for multiple descriptions in a single batch operation.
 
@@ -30,15 +30,12 @@ async def match_codes_in_system(
         chroma_client (ClientAPI): The ChromaDB client
 
     Returns:
-        List[Tuple[CodeSystem, str]]: List of tuples containing (code_system, code) for each input description.
+        List[str]: List of codes for each input description.
     """
     if not descriptions:
         return []
 
-    try:
-        collection = chroma_client.get_collection(coding_system.value)
-    except Exception:
-        raise ValueError(f"No collection found for coding system: {coding_system}")
+    collection = chroma_client.get_collection(coding_system.value)
 
     # Encode all descriptions using embedder
     matched_results = []
@@ -48,7 +45,7 @@ async def match_codes_in_system(
             query_embeddings=embedding_batch, n_results=1, include=[]
         )["ids"]
         codes = [result[0] for result in results]
-        matched_results.extend([(coding_system, code) for code in codes])
+        matched_results.extend(codes)
 
     return matched_results
 
@@ -88,8 +85,8 @@ async def match_codes(
         )
 
         # Collect results with their original indices
-        for idx, result in zip(indices, batch_results):
-            results_with_indices.append((idx, result))
+        for idx, code in zip(indices, batch_results):
+            results_with_indices.append((idx, (system, code)))
 
     # Sort by original index and extract results
     results_with_indices.sort(key=lambda x: x[0])
@@ -110,11 +107,11 @@ async def code_patient(
     # Collect static queries
     static_queries = []
     if recipe.gender:
-        static_queries.append(("snomed", f"Gender ({recipe.gender})"))
+        static_queries.append((CodeSystem("snomed"), f"Gender ({recipe.gender})"))
     if recipe.race:
-        static_queries.append(("snomed", f"Race ({recipe.race})"))
+        static_queries.append((CodeSystem("snomed"), f"Race ({recipe.race})"))
     if recipe.ethnicity:
-        static_queries.append(("snomed", f"Ethnicity ({recipe.ethnicity})"))
+        static_queries.append((CodeSystem("snomed"), f"Ethnicity ({recipe.ethnicity})"))
 
     # Collect longitudinal queries
     longitudinal_queries = [
@@ -148,12 +145,14 @@ async def code_patient(
     )
 
     # Static events
-    for (code_system, code_desc), matched_code in zip(static_queries, static_results):
+    for (query_cs, code_desc), (code_system, matched_code) in zip(
+        static_queries, static_results
+    ):
         rows.append(
             {
                 "subject_id": patient_id,
                 "time": None,
-                "code": _format_code(CodeSystem(code_system), matched_code),
+                "code": _format_code(code_system, matched_code),
                 "numeric_value": None,
                 "unit": None,
             }
@@ -163,21 +162,19 @@ async def code_patient(
     idx = 0
     for time_str, events in patient.root.items():
         for row in events:
-            matched_code = longitudinal_results[idx]
+            code_system, matched_code = longitudinal_results[idx]
             rows.append(
                 {
                     "subject_id": patient_id,
                     "time": _convert_time(time_str),
-                    "code": _format_code(row.code_system, matched_code),
+                    "code": _format_code(code_system, matched_code),
                     "numeric_value": row.numeric_value,
                     "unit": row.unit,
                 }
             )
             idx += 1
 
-    # Create pyarrow table
-    schema = PatientSchema()
-    table = pa.Table.from_pylist(rows, schema=schema)
+    table = pa.Table.from_pylist(rows, schema=PatientSchema.schema())
     return table
 
 
