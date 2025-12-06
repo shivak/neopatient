@@ -145,10 +145,10 @@ class PatientRecipe(BaseModel):
 
     start_date: datetime
     end_date: datetime
+    birthday: datetime
     description: str
     total_codes: int
     unique_codes: int
-    duration: str
     num_times: int
     avg_codes_per_time: float
 
