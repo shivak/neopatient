@@ -2,21 +2,20 @@ Generate a longitudinal record for this specific synthetic patient: {{recipe.des
 
 * your output should be a JSON object: {"records": {time: [[code_system, code_desc] or [code_system, code_desc, numeric_value, unit], ...], ...}, "finished": true/false}
 * generate events sequentially by time
-* set "finished": true only if you have completed the full record spanning from {{start_date}} to {{end_date}} with approximately {{recipe.total_codes}} total events; otherwise set "finished": false
-* time: string key (ISO timestamp to appropriate precision; use date precision (YYYY-MM-DD) for claims and EHR outpatient, datetime for EHR inpatient; use patient's birthday for static/person-level measurements)
-* code_system: the vocabulary system for this code (must be one of: {{ allowed_codes | join(', ') }})
+* set "finished": true only if you have completed the full record spanning from {{start_date}} to {{end_date}}; otherwise set "finished": false
+* time: string key (ISO timestamp to appropriate precision; {% if record_type in ['claims', 'ehr-outpatient'] %}use date precision (YYYY-MM-DD){% else %}use datetime precision (YYYY-MM-DDTHH:MM){% endif %} for {{record_type}}; use patient's birthday for static/person-level measurements)
+* code_system: the vocabulary system for this code (must be one of: {{ allowed_code_systems | join(', ') }})
 * code_desc: brief textual description of the measurement/event (not the code itself)
 * for non-numeric events: output [code_system, code_desc]
 * for numeric events: output [code_system, code_desc, numeric_value, unit] (unit is required when numeric_value is present)
 
-* include static measurements for gender, race, and ethnicity
-* begin the trajectory on their birthday with birth-related descriptions
-* the record should span from {{start_date}} to {{end_date}}
+* the first timestamp should be their birthday, with static measurements for gender, race, and ethnicity
+* the rest of the record should span from {{start_date}} to {{end_date}}
 * {{recipe.total_codes}} total events (CRUCIAL! do *not* generate fewer)
 * approximately {{recipe.unique_codes}} distinct codes 
- * approximately {{recipe.num_times}} time points
- * average time between timestamps: approximately {{ "%.1f"|format(avg_time_between_timestamps) }} days
- * {{recipe.avg_codes_per_time}} codes per time point, on average
+* approximately {{recipe.num_times}} time points
+* average time between timestamps: approximately {{ "%.1f"|format(avg_time_between_timestamps) }} days
+* {{recipe.avg_codes_per_time}} codes per time point, on average
 
 --- example output ---
 

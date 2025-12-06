@@ -71,7 +71,7 @@ def create_generation_prompts(
     """Create generation prompts from PatientRecipe objects."""
     # Convert string to enum
     record_type_enum = RecordType(record_type)
-    allowed_codes = CodeSystem.allowed_in(record_type_enum)
+    allowed_code_systems = CodeSystem.allowed_in(record_type_enum)
 
     prompts = []
     for recipe in recipes:
@@ -98,7 +98,7 @@ def create_generation_prompts(
             start_date=formatted_start,
             end_date=formatted_end,
             recipe=recipe,
-            allowed_codes=[cs.value for cs in allowed_codes],
+            allowed_code_systems=[cs.value for cs in allowed_code_systems],
             avg_time_between_timestamps=avg_time_between_timestamps,
         )
         prompts.append(prompt)
