@@ -7,7 +7,6 @@ import sys
 import time
 from typing import Dict, List, Union, Tuple
 import pathlib
-import datetime
 from openai import AsyncOpenAI
 import jinja2
 
@@ -190,10 +189,6 @@ async def synthesize_patient(
             content = response.choices[0].message.content
             logger.info(f"Generation response for segment {seg_idx}: {content}")
             flat_generation_response = GenerationResponse.model_validate_json(content)
-            if not flat_generation_response.finished:
-                raise ValueError(
-                    f"Generation not finished for segment {seg_idx}, discarding incomplete record"
-                )
             segment_records = flat_generation_response.records.unflatten()
             # Combine records, assuming no overlapping times
             combined_records.update(segment_records.root)
@@ -700,14 +695,13 @@ def _parse_generation_results(
             flat_generation_response = GenerationResponse.model_validate_json(
                 result["response"]["body"]["choices"][0]["message"]["content"]
             )
-            if flat_generation_response.finished:
-                key = (cohort_idx, patient_id)
-                if key not in segment_data:
-                    segment_data[key] = []
-                segment_data[key].append(
-                    (seg_idx, flat_generation_response.records.unflatten())
+            key = (cohort_idx, patient_id)
+            if key not in segment_data:
+                            segment_data[key] = []
+            segment_data[key].append(
+                (seg_idx, flat_generation_response.records.unflatten())
                 )
-
+                
     # Combine segments for each patient
     for (cohort_idx, patient_id), segments in segment_data.items():
         combined_records = {}

@@ -1,16 +1,15 @@
-Generate {{n}} individual patient recipes that satisfy the following positive cohort description: "{{positive_cohort}}"
+Generate {{n}} individual patient recipes that satisfy the following (positive) description: "{{positive_cohort}}"
 
-Each recipe must also explicitly specify what the individual should NOT be like, based on the negative cohort description: "{{negative_cohort}}"
+These patient recipes should NOT satisfy the following (negative) description: "{{negative_cohort}}"
 
-* Each recipe should include birthday, description, gender, race, ethnicity, and a list of temporal segments.
-* Each segment should have start_date, end_date, num_times (number of distinct timestamps), avg_codes_per_time (average number of codes per timestamp), and description of what occurred during that period.
-* Encourage segments with up to 300 events (num_times * avg_codes_per_time) to fit within LLM context limits.
+* Each recipe should include birthday, overall description, gender, race, ethnicity, and a list of temporal segments.
 * Each overall description should be self-contained, including demographics, conditions, and any relevant details.
-* Assign unique patient IDs. By default, these should be random-looking (not sequential) but heed the cohort descriptions about what the IDs should be.
-* Use the advisory examples of stats from similar records to guide your choices, but generate appropriate final values for each recipe.
+* Each segment should have start and end dates, number of distinct timestamps, average number of codes per timestamp, and description of what occurred during that time period. Segments should be up to up to 300 events (num_times * avg_codes_per_time) 
+* To make the recipes natural and realistic, include "irrelevant" aspects of their patient journey which are not in the positive description, but still do NOT satisfy the negative description.
+* Assign unique patient IDs. By default, these should be random-looking (not sequential) but heed the positive description about what the IDs should be.
 * Output as JSON object: {(patient id): PatientRecipe}, ...}
 
-Here are advisory examples of statistics from similar records:
+Use the advisory examples of stats from similar records:
 {% for stat in stats %}
 - total_codes: {{ stat.total_codes }}, unique_codes: {{ stat.unique_codes }}, duration: {{ stat.duration }}, num_times: {{ stat.num_times }}, avg_codes_per_time: {{ stat.avg_codes_per_time }}
 {% endfor %}

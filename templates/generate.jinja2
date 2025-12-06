@@ -4,9 +4,8 @@ Overall patient description: {{recipe.description}}
 
 Segment-specific description: {{segment.description}}
 
-* your output should be a JSON object: {"records": {time: [[code_system, code_desc] or [code_system, code_desc, numeric_value, unit], ...], ...}, "finished": true/false}
+* your output should be a JSON object: {"records": {time: [[code_system, code_desc] or [code_system, code_desc, numeric_value, unit], ...], ...}}
 * generate events sequentially by time for this segment only
-* set "finished": true only if you have completed the full segment spanning from {{start_date}} to {{end_date}}; otherwise set "finished": false
 * time: string key (ISO timestamp to appropriate precision; {% if record_type in ['claims', 'ehr-outpatient'] %}use date precision (YYYY-MM-DD){% else %}use datetime precision (YYYY-MM-DDTHH:MM){% endif %} for {{record_type}})
 * code_system: the vocabulary system for this code (must be one of: {{ allowed_code_systems | join(', ') }})
 * code_desc: brief textual description of the measurement/event (not the code itself)
@@ -21,37 +20,34 @@ Segment-specific description: {{segment.description}}
 
 --- example output ---
 
- {% if record_type == 'claims' %}
+{% if record_type == 'claims' %}
 {
   "records": {
      "2025-10-05": [
-       ["cpt", "Office or other outpatient visit for the evaluation and management of an established patient"],
-       ["ndc", "Lisinopril 10 MG Oral Tablet", 1.0, "tablet"],
-       ["icd10", "Essential (primary) hypertension"]
-     ]
-  },
-  "finished": true
+        ["cpt", "Office or other outpatient visit for the evaluation and management of an established patient"],
+        ["ndc", "Lisinopril 10 MG Oral Tablet", 1.0, "tablet"],
+        ["icd10", "Essential (primary) hypertension"]
+      ]
+   }
 }
- {% elif record_type == 'ehr-inpatient' %}
+{% elif record_type == 'ehr-inpatient' %}
 {
   "records": {
      "2025-10-05T09:30": [
-       ["lnc", "Platelets [#/volume] in Blood", 4500.0, "/uL"],
-       ["lnc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
-       ["icd10", "Essential (primary) hypertension"]
-     ]
-  },
-  "finished": true
+        ["lnc", "Platelets [#/volume] in Blood", 4500.0, "/uL"],
+        ["lnc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
+        ["icd10", "Essential (primary) hypertension"]
+      ]
+   }
 }
- {% elif record_type == 'ehr-outpatient' %}
+{% elif record_type == 'ehr-outpatient' %}
 {
   "records": {
      "2025-10-05": [
-       ["lnc", "Platelets [#/volume] in Blood", 4500.0, "/uL"],
-       ["lnc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
-       ["icd10", "Essential (primary) hypertension"]
-     ]
-  },
-  "finished": true
+        ["lnc", "Platelets [#/volume] in Blood", 4500.0, "/uL"],
+        ["lnc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
+        ["icd10", "Essential (primary) hypertension"]
+      ]
+   }
 }
- {% endif %}
+{% endif %}

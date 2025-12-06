@@ -118,9 +118,8 @@ class FlatUncodedPatient(RootModel[Dict[str, List[FlatEvent]]]):
 
 
 class GenerationResponse(BaseModel):
-    """Response from generation LLM with finished flag (events as tuples)."""
+    """Response from generation LLM (events as tuples)."""
 
-    finished: bool = Field(description="Whether the generation is complete")
     records: FlatUncodedPatient = Field(
         description="The generated patient records (flat)"
     )
