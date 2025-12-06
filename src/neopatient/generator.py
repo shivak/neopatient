@@ -27,7 +27,7 @@ from .models import (
     CodeSystem,
     RecordType,
 )
-from .sampler import sample_recipes, sample_recipe
+from .sampler import sample_recipes
 
 
 # Load Jinja2 template from file
@@ -118,18 +118,19 @@ async def synthesize_patient(
     generator: str = "gpt-5",
     verifier: str = "gpt-5",
     record_type: str = "ehr-outpatient",
-    end_date: str | None = None,
+    sampler: str = "gpt-5",
 ) -> Patient:
     """
     Generates a synthetic longitudinal patient record for an individual patient.
 
-    First, generates events based on the positive cohort description.
+    First, samples an individualized patient description using the cohort-level positive and negative descriptions.
+    Then, generates events based on the sampled description.
     Then, matches codes using ChromaDB.
     Finally, verifies the record satisfies the cohort-level positive and negative descriptions.
 
     Args:
-        positive: Positive cohort description used for generation and verification
-        negative: Negative cohort description for verification
+        positive: Positive cohort description used for sampling and verification
+        negative: Negative cohort description for sampling and verification
         patient_id: Unique patient identifier
         chroma_db: The ChromaDB client, path, or None for code matching
         embedder_model: Embedder model name for code matching
@@ -139,7 +140,7 @@ async def synthesize_patient(
         generator: Model name for generation (default: "gpt-5")
         verifier: Model name for verification (default: "gpt-5")
         record_type: Type of record ("claims", "ehr-inpatient", "ehr-outpatient") (default: "ehr-outpatient")
-        end_date: End date for the record (ISO string), defaults to current time
+        sampler: Model name for sampling individualized descriptions (default: "gpt-5")
 
     Returns:
         Generated patient record as MEDS DataSchema table
@@ -154,9 +155,8 @@ async def synthesize_patient(
 
     print(f"Generating record using: {generator}")
 
-    if end_date is None:
-        end_date = datetime.datetime.now().isoformat()
-    recipe = sample_recipe(positive, record_type, end_date)
+    sampled = await sample_recipes(positive, negative, 1, record_type, sampler, logger)
+    recipe = next(iter(sampled.values()))
 
     # Step 1: Generate tuples with LLM
     prompts = create_generation_prompts(record_type, [recipe])

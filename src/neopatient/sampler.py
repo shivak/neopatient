@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from typing import Dict, List, Any, Optional
 from openai import AsyncOpenAI
@@ -30,35 +31,13 @@ def sample_patient_stats(csv_path: str, n: int) -> List[Dict[str, Any]]:
     return sampled_df.to_dict("records")
 
 
-def sample_recipe(
-    positive: str, record_type: str, end_date: Optional[str] = None
-) -> PatientRecipe:
-    if end_date is None:
-        end_date = datetime.datetime.now().isoformat()
-    csv_path = _get_csv_path(record_type)
-    stat = sample_patient_stats(csv_path, 1)[0]
-    duration = stat["duration"]
-    days = int(duration.split()[0])
-    start_date = (
-        datetime.datetime.fromisoformat(end_date) - datetime.timedelta(days=days)
-    ).isoformat()
-    if record_type in ["claims", "ehr-outpatient"]:
-        start_date = start_date.split("T")[0]
-        end_date = end_date.split("T")[0]
-    return PatientRecipe(
-        description=positive,
-        start_date=datetime.datetime.fromisoformat(start_date),
-        end_date=datetime.datetime.fromisoformat(end_date),
-        total_codes=stat["total_codes"],
-        unique_codes=stat["unique_codes"],
-        duration=stat["duration"],
-        num_times=stat["num_times"],
-        avg_codes_per_time=stat["avg_codes_per_time"],
-    )
-
-
 async def sample_recipes(
-    positive: str, negative: str, n: int, record_type: str, sampler_model: str = "gpt-5"
+    positive: str,
+    negative: str,
+    n: int,
+    record_type: str,
+    sampler_model: str = "gpt-5",
+    logger: Optional[logging.Logger] = None,
 ) -> Dict[int, PatientRecipe]:
     """
     Samples individual patient recipes that satisfy cohort criteria.
@@ -72,6 +51,7 @@ async def sample_recipes(
         n: Number of patients to sample
         record_type: Type of record ("claims", "ehr-inpatient", "ehr-outpatient")
         sampler_model: Model name for sampling (default: "gpt-5")
+        logger: Optional logger for logging the LLM response
 
     Returns:
         Dict of {patient_id: PatientRecipe}
@@ -98,6 +78,8 @@ async def sample_recipes(
         temperature=0.7,
     )
     content = response.choices[0].message.content
+    if logger:
+        logger.info(f"Sampling response: {content}")
     if content is None:
         raise ValueError("LLM response content is None")
     sampled_dict = json.loads(content)

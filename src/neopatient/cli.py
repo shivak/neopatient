@@ -28,9 +28,9 @@ async def _main():
         help="Set logging level",
     )
     single_parser.add_argument(
-        "--end-date",
-        default=None,
-        help="End date for the record (ISO string), defaults to current time",
+        "--sampler",
+        default="gpt-5",
+        help="Model name for sampling individualized descriptions",
     )
 
     # Cohort subcommand
@@ -104,7 +104,7 @@ async def _main():
                 generator=args.generator,
                 verifier=args.verifier,
                 record_type=args.record_type,
-                end_date=args.end_date,
+                sampler=args.sampler,
             )
             logger.info("Patient record generated")
             parquet.write_table(record, args.out)
