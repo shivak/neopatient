@@ -20,9 +20,9 @@ async def match_codes_in_system(
     descriptions: list[str],
     chroma_client: ClientAPI,
     embedder: Embed,
-) -> list[str]:
+) -> list[tuple[str, str]]:
     """
-    Find the best matching medical codes for multiple descriptions in a single batch operation.
+    Find the best matching medical codes and descriptions for multiple descriptions in a single batch operation.
 
     Args:
         coding_system (CodeSystem): The medical coding system
@@ -30,7 +30,7 @@ async def match_codes_in_system(
         chroma_client (ClientAPI): The ChromaDB client
 
     Returns:
-        List[str]: List of codes for each input description.
+        List[Tuple[str, str]]: List of (code, description) tuples for each input description.
     """
     if not descriptions:
         return []
@@ -42,10 +42,12 @@ async def match_codes_in_system(
 
     async for embedding_batch in embedder(descriptions):
         results = collection.query(
-            query_embeddings=embedding_batch, n_results=1, include=[]
-        )["ids"]
-        codes = [result[0] for result in results]
-        matched_results.extend(codes)
+            query_embeddings=embedding_batch, n_results=1, include=["documents"]
+        )
+        codes_and_descrs = [
+            (ids[0], docs[0]) for ids, docs in zip(results["ids"], results["documents"])
+        ]
+        matched_results.extend(codes_and_descrs)
 
     return matched_results
 
@@ -54,9 +56,9 @@ async def match_codes(
     queries: List[Tuple[CodeSystem, str]],
     chroma_client: ClientAPI,
     embedder: Embed,
-) -> List[Tuple[CodeSystem, str]]:
+) -> List[Tuple[CodeSystem, str, str]]:
     """
-    Find the best matching medical codes for multiple (coding_system, description) pairs.
+    Find the best matching medical codes and descriptions for multiple (coding_system, description) pairs.
     Groups queries by coding system for optimal batch processing.
 
     Args:
@@ -64,7 +66,7 @@ async def match_codes(
         chroma_client (chromadb.PersistentClient): The ChromaDB client
 
     Returns:
-        List[Tuple[CodeSystem, str]]: List of (code_system, code) tuples in the same order as input queries
+        List[Tuple[CodeSystem, str, str]]: List of (code_system, code, description) tuples in the same order as input queries
     """
     if not queries:
         return []
@@ -85,8 +87,8 @@ async def match_codes(
         )
 
         # Collect results with their original indices
-        for idx, code in zip(indices, batch_results):
-            results_with_indices.append((idx, (system, code)))
+        for idx, (code, descr) in zip(indices, batch_results):
+            results_with_indices.append((idx, (system, code, descr)))
 
     # Sort by original index and extract results
     results_with_indices.sort(key=lambda x: x[0])
@@ -141,11 +143,12 @@ async def code_patient(
             "code": "MEDS_BIRTH",
             "numeric_value": None,
             "unit": None,
+            "code_descr": None,
         }
     )
 
     # Static events
-    for (query_cs, code_desc), (code_system, matched_code) in zip(
+    for (query_cs, code_desc), (code_system, matched_code, matched_descr) in zip(
         static_queries, static_results
     ):
         rows.append(
@@ -155,6 +158,7 @@ async def code_patient(
                 "code": _format_code(code_system, matched_code),
                 "numeric_value": None,
                 "unit": None,
+                "code_descr": matched_descr[:128],
             }
         )
 
@@ -162,7 +166,7 @@ async def code_patient(
     idx = 0
     for time_str, events in patient.root.items():
         for row in events:
-            code_system, matched_code = longitudinal_results[idx]
+            code_system, matched_code, matched_descr = longitudinal_results[idx]
             rows.append(
                 {
                     "subject_id": patient_id,
@@ -170,11 +174,13 @@ async def code_patient(
                     "code": _format_code(code_system, matched_code),
                     "numeric_value": row.numeric_value,
                     "unit": row.unit,
+                    "code_descr": matched_descr[:128],
                 }
             )
             idx += 1
 
-    table = pa.Table.from_pylist(rows, schema=PatientSchema.schema())
+    # Don't validate against PatientSchema because code_descr gets dropped
+    table = pa.Table.from_pylist(rows)
     return table
 
 
