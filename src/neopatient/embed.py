@@ -79,7 +79,7 @@ def create_embedder(
     """Create an embedder from model name and args dict.
 
     Args:
-        embedder_model: Model name (HF if contains '/', OpenAI otherwise)
+        embedder_model: Model name
         batch_size: Batch size for embedding operations
         embedder_args: Dictionary of embedder arguments
         embedder_base_url: Base URL for OpenAI-compatible API (uses OpenAI embedder if provided)
@@ -88,16 +88,11 @@ def create_embedder(
         Embedder function
     """
     if embedder_base_url is not None:
-        # Use OpenAI embedder with custom base URL
         return openai_embedder(
             embedder_model,
             batch_size=batch_size,
             embedder_base_url=embedder_base_url,
             **embedder_args,
         )
-    elif "/" in embedder_model:
-        # HuggingFace model
-        return sentence_embedder(embedder_model, batch_size=batch_size, **embedder_args)
     else:
-        # OpenAI model
-        return openai_embedder(embedder_model, batch_size=batch_size, **embedder_args)
+        return sentence_embedder(embedder_model, batch_size=batch_size, **embedder_args)

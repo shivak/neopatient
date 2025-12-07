@@ -99,7 +99,7 @@ def resolve_chroma_client(
 
     if chroma_db is None:
         # Download pre-generated ChromaDB files from Hugging Face
-        chroma_path = snapshot_download("cab-harvard/neopatient")
+        chroma_path = snapshot_download("CAB-Harvard/neopatient-Qwen3-Embedding-8B", repo_type="dataset", revision="09eab0710c2844009eb97c3e30d563aec82f0764")
         return load_chroma_client(chroma_path)
     elif isinstance(chroma_db, pathlib.Path):
         return load_chroma_client(str(chroma_db))
