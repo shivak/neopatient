@@ -109,6 +109,7 @@ async def synthesize_patient(
     embedder_model: str,
     embedder_batch_size: int,
     embedder_args: dict,
+    embedder_base_url: str | None = None,
     seed: int | None = None,
     generator: str = "gpt-5",
     verifier: str = "gpt-5",
@@ -146,7 +147,9 @@ async def synthesize_patient(
     logger = logging.getLogger(__name__)
     chroma_client = resolve_chroma_client(chroma_db)
     client = AsyncOpenAI()  # Assume API key is set via environment
-    embedder = create_embedder(embedder_model, embedder_batch_size, embedder_args)
+    embedder = create_embedder(
+        embedder_model, embedder_batch_size, embedder_args, embedder_base_url
+    )
 
     print(f"Generating record using: {generator}")
 
@@ -224,6 +227,7 @@ async def synthesize_cohort(
     embedder_model: str,
     embedder_batch_size: int,
     embedder_args: dict,
+    embedder_base_url: str | None = None,
     epsilon: float = 0.2,
     state: State | None = None,
     generator: str = "gpt-5",
@@ -261,7 +265,9 @@ async def synthesize_cohort(
     """
     chroma_db = resolve_chroma_client(chroma_db)
     client = AsyncOpenAI()
-    embedder = create_embedder(embedder_model, embedder_batch_size, embedder_args)
+    embedder = create_embedder(
+        embedder_model, embedder_batch_size, embedder_args, embedder_base_url
+    )
 
     # If resuming from state, use existing state
     if state is not None:
@@ -321,6 +327,7 @@ async def synthesize_cohort_with_state_file(
     embedder_model: str,
     embedder_batch_size: int,
     embedder_args: dict,
+    embedder_base_url: str | None = None,
     generator: str = "gpt-5-nano",
     verifier: str = "gpt-5",
     sampler: str = "gpt-5",
@@ -356,6 +363,7 @@ async def synthesize_cohort_with_state_file(
             embedder_model=embedder_model,
             embedder_batch_size=embedder_batch_size,
             embedder_args=embedder_args,
+            embedder_base_url=embedder_base_url,
             generator=generator,
             verifier=verifier,
             sampler=sampler,

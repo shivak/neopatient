@@ -42,7 +42,10 @@ async def _main():
 
     try:
         embedder = create_embedder(
-            args.embedder, args.embedder_batch_size, args.embedder_args
+            args.embedder,
+            args.embedder_batch_size,
+            args.embedder_args,
+            args.embedder_base_url,
         )
         logger.info(f"Using embedder: {args.embedder}")
 

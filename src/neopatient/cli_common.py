@@ -5,8 +5,13 @@ from .models import RecordType
 def add_embedder_args(parser):
     parser.add_argument(
         "--embedder",
-        default="abhinand/MedEmbed-large-v0.1",
-        help="Embedder model name (HF if contains '/', OpenAI otherwise)",
+        default="Qwen/Qwen3-Embedding-8B",
+        help="Embedder model name",
+    )
+    parser.add_argument(
+        "--embedder-base-url",
+        default=None,
+        help="Base URL for OpenAI-compatible API (uses OpenAI embedder if provided)",
     )
     parser.add_argument(
         "--embedder-args",

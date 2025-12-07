@@ -35,18 +35,21 @@ def sentence_embedder(model_name: str, batch_size: int, **kwargs) -> Embed:
     return embed
 
 
-def openai_embedder(model_name: str, batch_size: int, **kwargs) -> Embed:
+def openai_embedder(
+    model_name: str, batch_size: int, embedder_base_url: str | None = None, **kwargs
+) -> Embed:
     """Create an OpenAI embedder.
 
     Args:
         model_name: OpenAI model name
         batch_size: Batch size for API calls (default: 100)
+        embedder_base_url: Base URL for OpenAI-compatible API (optional)
         **kwargs: Additional arguments passed to embeddings.create() call
 
     Returns:
         Async embedder function that yields batches of embeddings
     """
-    client = AsyncOpenAI()
+    client = AsyncOpenAI(base_url=embedder_base_url)
 
     async def embed(texts: List[str]) -> AsyncGenerator[List[List[float]], None]:
         # Truncate texts to 256 characters
@@ -67,18 +70,32 @@ def openai_embedder(model_name: str, batch_size: int, **kwargs) -> Embed:
     return embed
 
 
-def create_embedder(embedder_model: str, batch_size: int, embedder_args: dict) -> Embed:
+def create_embedder(
+    embedder_model: str,
+    batch_size: int,
+    embedder_args: dict,
+    embedder_base_url: str | None = None,
+) -> Embed:
     """Create an embedder from model name and args dict.
 
     Args:
         embedder_model: Model name (HF if contains '/', OpenAI otherwise)
         batch_size: Batch size for embedding operations
         embedder_args: Dictionary of embedder arguments
+        embedder_base_url: Base URL for OpenAI-compatible API (uses OpenAI embedder if provided)
 
     Returns:
         Embedder function
     """
-    if "/" in embedder_model:
+    if embedder_base_url is not None:
+        # Use OpenAI embedder with custom base URL
+        return openai_embedder(
+            embedder_model,
+            batch_size=batch_size,
+            embedder_base_url=embedder_base_url,
+            **embedder_args,
+        )
+    elif "/" in embedder_model:
         # HuggingFace model
         return sentence_embedder(embedder_model, batch_size=batch_size, **embedder_args)
     else:
