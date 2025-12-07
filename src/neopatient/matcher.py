@@ -2,7 +2,6 @@ from chromadb.api import ClientAPI
 from typing import List, Tuple, Dict
 from .models import CodeSystem, UncodedPatient, Patient, Cohort, PatientRecipe
 from .embed import Embed
-from meds.schema import DataSchema as PatientSchema
 import pyarrow as pa
 import datetime
 
@@ -13,6 +12,10 @@ def _format_code(code_system: CodeSystem, code: str) -> str:
 
 def _convert_time(time_str: str) -> datetime.datetime:
     return datetime.datetime.fromisoformat(time_str)
+
+
+def query_with_instructions(code_desc: str) -> str:
+    return f"Instruct: Find the closest medical code description that matches this query, focusing on the medical concept, severity, and other medical particulars.\nQuery:{code_desc}"
 
 
 async def match_codes_in_system(
@@ -40,7 +43,8 @@ async def match_codes_in_system(
     # Encode all descriptions using embedder
     matched_results = []
 
-    async for embedding_batch in embedder(descriptions):
+    instructed_descriptions = [query_with_instructions(desc) for desc in descriptions]
+    async for embedding_batch in embedder(instructed_descriptions):
         results = collection.query(
             query_embeddings=embedding_batch, n_results=1, include=["documents"]
         )
