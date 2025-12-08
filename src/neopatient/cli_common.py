@@ -5,24 +5,20 @@ from .models import RecordType
 def add_embedder_args(parser):
     parser.add_argument(
         "--embedder",
-        default="Qwen/Qwen3-Embedding-8B",
         help="Embedder model name",
     )
     parser.add_argument(
         "--embedder-base-url",
-        default=None,
         help="Base URL for OpenAI-compatible API (uses OpenAI embedder if provided)",
     )
     parser.add_argument(
         "--embedder-args",
         type=json.loads,
-        default={},
         help="JSON dict for embedder configuration",
     )
     parser.add_argument(
         "--embedder-batch-size",
         type=int,
-        default=128,
         help="Batch size for embedding operations",
     )
 

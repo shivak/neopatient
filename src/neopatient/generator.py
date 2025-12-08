@@ -14,6 +14,23 @@ from chromadb.api import ClientAPI
 from .matcher import code_patient, code_cohort
 from .database import resolve_chroma_client
 from .embed import create_embedder
+
+
+def fill_embedder_defaults(
+    embedder_model: str | None,
+    embedder_batch_size: int | None,
+    embedder_args: dict | None,
+    embedder_base_url: str | None,
+) -> tuple[str, int, dict, str | None]:
+    """Fill in default values for embedder parameters if they are None."""
+    return (
+        embedder_model if embedder_model is not None else "Qwen/Qwen3-Embedding-8B",
+        embedder_batch_size if embedder_batch_size is not None else 128,
+        embedder_args if embedder_args is not None else {},
+        embedder_base_url,
+    )
+
+
 from .models import (
     UncodedPatient,
     VerificationResponse,
@@ -107,9 +124,9 @@ async def synthesize_patient(
     negative: str,
     patient_id: int,
     chroma_db: Union[ClientAPI, pathlib.Path, None],
-    embedder_model: str,
-    embedder_batch_size: int,
-    embedder_args: dict,
+    embedder_model: str | None,
+    embedder_batch_size: int | None,
+    embedder_args: dict | None,
     embedder_base_url: str | None = None,
     seed: int | None = None,
     generator: str = "gpt-5",
@@ -147,6 +164,11 @@ async def synthesize_patient(
     """
     logger = logging.getLogger(__name__)
     chroma_client = resolve_chroma_client(chroma_db)
+    embedder_model, embedder_batch_size, embedder_args, embedder_base_url = (
+        fill_embedder_defaults(
+            embedder_model, embedder_batch_size, embedder_args, embedder_base_url
+        )
+    )
     client = AsyncOpenAI()  # Assume API key is set via environment
     embedder = create_embedder(
         embedder_model, embedder_batch_size, embedder_args, embedder_base_url
@@ -225,9 +247,9 @@ async def synthesize_patient(
 async def synthesize_cohort(
     cohort_specs: List[CohortSpec],
     chroma_db: Union[ClientAPI, pathlib.Path, None],
-    embedder_model: str,
-    embedder_batch_size: int,
-    embedder_args: dict,
+    embedder_model: str | None,
+    embedder_batch_size: int | None,
+    embedder_args: dict | None,
     embedder_base_url: str | None = None,
     epsilon: float = 0.2,
     state: State | None = None,
@@ -265,6 +287,11 @@ async def synthesize_cohort(
         - State dictionary for resuming if batch is not ready yet
     """
     chroma_db = resolve_chroma_client(chroma_db)
+    embedder_model, embedder_batch_size, embedder_args, embedder_base_url = (
+        fill_embedder_defaults(
+            embedder_model, embedder_batch_size, embedder_args, embedder_base_url
+        )
+    )
     client = AsyncOpenAI()
     embedder = create_embedder(
         embedder_model, embedder_batch_size, embedder_args, embedder_base_url
@@ -325,9 +352,9 @@ async def synthesize_cohort(
 async def synthesize_cohort_with_state_file(
     cohort_specs: List[CohortSpec],
     chroma_db: Union[ClientAPI, pathlib.Path, None],
-    embedder_model: str,
-    embedder_batch_size: int,
-    embedder_args: dict,
+    embedder_model: str | None,
+    embedder_batch_size: int | None,
+    embedder_args: dict | None,
     embedder_base_url: str | None = None,
     generator: str = "gpt-5-nano",
     verifier: str = "gpt-5",
