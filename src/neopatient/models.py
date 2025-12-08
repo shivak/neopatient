@@ -8,14 +8,15 @@ import pyarrow as pa
 class CodeSystem(str, Enum):
     """Enumeration of supported medical vocabulary systems."""
 
-    SNOMED = "snomed"  # not in claims
-    RXNORM = "rxnorm"  # not in claims
+    SNOMED = "snomed"
+    RXNORM = "rxnorm"
     ICD9_PROC = "icd9_proc"
-    LNC = "lnc"  # not in claims
+    LOINC = "loinc"
+    # LNC = "lnc"  # just the underlying "parts" of loinc codes
     ICD10_PROC = "icd10_proc"
     CPT = "cpt"
     ICD9 = "icd9"
-    NDC = "ndc"  # not in ehr
+    NDC = "ndc"
     ICD10 = "icd10"
     # not in EHR/claims data
     # PHECODE = "phecode"
@@ -39,7 +40,7 @@ class CodeSystem(str, Enum):
                 CodeSystem.SNOMED,
                 CodeSystem.RXNORM,
                 CodeSystem.ICD9_PROC,
-                CodeSystem.LNC,
+                CodeSystem.LOINC,
                 CodeSystem.ICD10_PROC,
                 CodeSystem.CPT,
                 CodeSystem.ICD9,

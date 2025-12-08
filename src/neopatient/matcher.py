@@ -14,8 +14,12 @@ def _convert_time(time_str: str) -> datetime.datetime:
     return datetime.datetime.fromisoformat(time_str)
 
 
-def query_with_instructions(code_desc: str) -> str:
-    return f"Instruct: find the closest medical code description. Focus on the medical concept, diagnosis, process, severity, and/or other medical particulars. Be cognizant of the fact that some medical terminology may be unfamiliar to you.\nQuery:{code_desc}"
+def query_with_instructions(code_desc: str, code_system: CodeSystem) -> str:
+    if code_system == CodeSystem.LOINC:
+        instruct = "find the closest medical code description. Focus on the medical observation, measurement or order. Be cognizant of the fact that some medical terminology may be abbreviated or unfamiliar to you."
+    else: 
+        instruct = "find the closest medical code description. Focus on the medical concept, diagnosis, process, severity, and/or other medical particulars. Be cognizant of the fact that some medical terminology may be unfamiliar to you."
+    return f"Instruct: {instruct}\nQuery:{code_desc}"
 
 
 async def match_codes_in_system(
@@ -43,7 +47,9 @@ async def match_codes_in_system(
     # Encode all descriptions using embedder
     matched_results = []
 
-    instructed_descriptions = [query_with_instructions(desc) for desc in descriptions]
+    instructed_descriptions = [
+        query_with_instructions(desc, coding_system) for desc in descriptions
+    ]
     async for embedding_batch in embedder(instructed_descriptions):
         results = collection.query(
             query_embeddings=embedding_batch, n_results=1, include=["documents"]

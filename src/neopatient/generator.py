@@ -95,7 +95,7 @@ def create_generation_prompts(
                 recipe=recipe,
                 segment=segment,
                 allowed_code_systems=[cs.value for cs in allowed_code_systems],
-                lnc_allowed=CodeSystem.LNC in allowed_code_systems,
+                loinc_allowed=CodeSystem.LOINC in allowed_code_systems,
             )
             prompts.append((patient_id, prompt))
 
