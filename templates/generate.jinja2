@@ -8,9 +8,9 @@ Segment-specific description: {{segment.description}}
 * generate events sequentially by time for this segment only. these should be specific events that would actually be coded in a typical {% if record_type == 'claims' %} claims record {% else %} electronic health record {% endif %}
 * time: {% if record_type in ['claims', 'ehr-outpatient'] %}use strict date precision (YYYY-MM-DD){% else %}use strict datetime precision (YYYY-MM-DDTHH:MM){% endif %}. If the descriptions have any strict constraints about dates, make sure to heed them. 
 * code_system: the vocabulary system for this code (must be one of: {{ allowed_code_systems | join(', ') }})
-* code_desc: brief textual description of the measurement/event (not the code itself)
+* code_desc: brief textual description of the measurement/event (not the code itself). focus on concepts, diagnoses, observations, procedures, prescriptions, etc. that would actually appear in a health record.
 * for non-numeric events: output [code_system, code_desc]
-* for numeric events: output [code_system, code_desc, numeric_value, unit] (unit is required when numeric_value is present). {% if lnc_allowed %} lnc events should always have measurements of this kind {% endif %}
+* for numeric events: output [code_system, code_desc, numeric_value, unit] (unit is required when numeric_value is present). {% if lnc_allowed and not (record_type == 'claims') %}lnc codes should always be accompanied by measurements in this way.{% endif %}
 
 * the segment should span from {{start_date}} to {{end_date}}
 * approximately {{segment.num_times * segment.avg_codes_per_time}} total events for this segment (CRUCIAL! do *not* generate fewer)

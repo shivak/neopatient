@@ -15,7 +15,7 @@ def _convert_time(time_str: str) -> datetime.datetime:
 
 
 def query_with_instructions(code_desc: str) -> str:
-    return f"Instruct: Find the closest medical code description that matches this query, focusing on the medical concept, severity, and other medical particulars.\nQuery:{code_desc}"
+    return f"Instruct: find the closest medical code description. Focus on the medical concept, diagnosis, process, severity, and/or other medical particulars. Be cognizant of the fact that some medical terminology may be unfamiliar to you.\nQuery:{code_desc}"
 
 
 async def match_codes_in_system(
