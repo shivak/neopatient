@@ -23,7 +23,7 @@ def add_embedder_args(parser):
     )
 
 
-def add_generation_args(parser):
+def add_specification_args(parser):
     parser.add_argument(
         "--positive", required=True, help="Positive patient description"
     )
@@ -32,13 +32,14 @@ def add_generation_args(parser):
     )
     parser.add_argument("--out", required=True, help="Output path for parquet file")
     parser.add_argument(
-        "--seed", type=int, default=None, help="Seed for reproducibility"
+        "--record-type",
+        default="ehr-outpatient",
+        choices=[e.value for e in RecordType],
+        help="Type of record",
     )
-    parser.add_argument(
-        "--db_dir",
-        default=None,
-        help="Path to ChromaDB database directory, or None to download from Hugging Face",
-    )
+
+
+def add_synthesis_args(parser):
     parser.add_argument(
         "--generator", default="gpt-5-nano", help="Model name for generation"
     )
@@ -46,8 +47,25 @@ def add_generation_args(parser):
         "--verifier", default="gpt-5", help="Model name for verification"
     )
     parser.add_argument(
-        "--record-type",
-        default="ehr-outpatient",
-        choices=[e.value for e in RecordType],
-        help="Type of record",
+        "--sampler",
+        default="gpt-5",
+        help="Model name for sampling individualized descriptions",
+    )
+    parser.add_argument(
+        "--db_dir",
+        default=None,
+        help="Path to ChromaDB database directory, or None to download from Hugging Face",
+    )
+    parser.add_argument(
+        "--log-level",
+        default="WARNING",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set logging level",
+    )
+
+
+def add_state_args(parser):
+    parser.add_argument("--state-file", required=True, help="State file for resuming")
+    parser.add_argument(
+        "--poll-interval", type=int, default=900, help="Poll interval in seconds"
     )

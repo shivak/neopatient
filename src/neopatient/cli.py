@@ -7,7 +7,12 @@ import pyarrow as pa
 from pyarrow import parquet
 from . import synthesize_patient, synthesize_cohort_with_state_file
 from .models import CohortSpec, RecordType
-from .cli_common import add_embedder_args, add_generation_args
+from .cli_common import (
+    add_embedder_args,
+    add_specification_args,
+    add_synthesis_args,
+    add_state_args,
+)
 
 
 async def _main():
@@ -19,49 +24,21 @@ async def _main():
         "single", help="Generate a single patient record"
     )
     add_embedder_args(single_parser)
-    add_generation_args(single_parser)
+    add_specification_args(single_parser)
+    add_synthesis_args(single_parser)
     single_parser.set_defaults(embedder_args={"model_kwargs": {"dtype": "bfloat16"}})
-    single_parser.add_argument(
-        "--log-level",
-        default="WARNING",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        help="Set logging level",
-    )
-    single_parser.add_argument(
-        "--sampler",
-        default="gpt-5",
-        help="Model name for sampling individualized descriptions",
-    )
 
     # Cohort subcommand
     cohort_parser = subparsers.add_parser(
         "cohort", help="Generate a cohort of patient records"
     )
     add_embedder_args(cohort_parser)
-    add_generation_args(cohort_parser)
+    add_specification_args(cohort_parser)
+    add_synthesis_args(cohort_parser)
+    add_state_args(cohort_parser)
     cohort_parser.set_defaults(embedder="sentence-transformers/all-MiniLM-L6-v2")
     cohort_parser.add_argument(
-        "--log-level",
-        default="WARNING",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        help="Set logging level",
-    )
-    cohort_parser.add_argument(
         "--size", type=int, required=True, help="Size of the cohort"
-    )
-    cohort_parser.add_argument(
-        "--sampler", default="gpt-5", help="Model name for sampling"
-    )
-    cohort_parser.add_argument(
-        "--poll_interval",
-        type=int,
-        default=15 * 60,
-        help="Polling interval in seconds for batch completion",
-    )
-    cohort_parser.add_argument(
-        "--state-file",
-        required=True,
-        help="Path to state file for resuming batch operations",
     )
 
     args = parser.parse_args()
