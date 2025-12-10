@@ -257,6 +257,7 @@ async def synthesize_cohort(
     verifier: str = "gpt-5-nano",
     sampler: str = "gpt-5",
 ) -> Union[List[Cohort], State]:
+    logger = logging.getLogger(__name__)
     """
     Generates synthetic patient records in batch using OpenAI's batch API.
 
@@ -314,13 +315,28 @@ async def synthesize_cohort(
     # Stage 1: Sample individual patients
     if current_state["stage"] == "sampling":
         return await _handle_sampling_stage(
-            client, current_state, cohort_specs, sampler
+            client,
+            current_state,
+            cohort_specs,
+            sampler,
+            generator,
+            chroma_db,
+            embedder,
+            verifier,
+            logger,
         )
 
     # Stage 2: Generate records using batch API
     elif current_state["stage"] == "generation":
         return await _handle_generation_stage(
-            client, current_state, cohort_specs, generator
+            client,
+            current_state,
+            cohort_specs,
+            generator,
+            chroma_db,
+            embedder,
+            verifier,
+            logger,
         )
 
     # Stage 2: Check generation results and apply code matching
@@ -332,13 +348,13 @@ async def synthesize_cohort(
     # Stage 3: Start verification with code-matched records
     elif current_state["stage"] == "matching":
         return await _handle_matching_stage(
-            client, current_state, chroma_db, embedder, cohort_specs, verifier
+            client, current_state, chroma_db, embedder, cohort_specs, verifier, logger
         )
 
     # Stage 4: Check verification results
     elif current_state["stage"] == "check_verification":
         return await _handle_check_verification_stage(
-            client, current_state, cohort_specs, verifier
+            client, current_state, cohort_specs, verifier, logger
         )
 
     # Stage 5: Process final results
@@ -410,13 +426,30 @@ async def synthesize_cohort_with_state_file(
 
 
 async def _handle_sampling_stage(
-    client: AsyncOpenAI, state: State, cohort_specs: List[CohortSpec], sampler: str
+    client: AsyncOpenAI,
+    state: State,
+    cohort_specs: List[CohortSpec],
+    sampler: str,
+    generator: str,
+    chroma_db,
+    embedder,
+    verifier: str,
+    logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Sample individual patient recipes for each cohort using the sampler LLM."""
     if state["sampled_descriptions"]:
         # Already sampled, move to generation
         state["stage"] = "generation"
-        return _handle_generation_stage(client, state, cohort_specs, sampler)
+        return await _handle_generation_stage(
+            client,
+            state,
+            cohort_specs,
+            generator,
+            chroma_db,
+            embedder,
+            verifier,
+            logger,
+        )
 
     # Sample for each cohort
     for spec in cohort_specs:
@@ -435,13 +468,29 @@ async def _handle_sampling_stage(
 
 
 async def _handle_generation_stage(
-    client: AsyncOpenAI, state: State, cohort_specs: List[CohortSpec], generator: str
+    client: AsyncOpenAI,
+    state: State,
+    cohort_specs: List[CohortSpec],
+    generator: str,
+    chroma_db,
+    embedder,
+    verifier: str,
+    logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Handle the initial generation stage using batch API."""
     if state["generation_tickets"]:
         # Already submitted generation requests, move to checking
         state["stage"] = "check_generation"
-        return _handle_check_generation_stage(client, state, cohort_specs, generator)
+        return await _handle_check_generation_stage(
+            client,
+            state,
+            cohort_specs,
+            chroma_db,
+            generator,
+            embedder,
+            verifier,
+            logger,
+        )
 
     # Prepare batch requests
     batch_requests = []
@@ -460,10 +509,14 @@ async def _handle_generation_stage(
         for pid, prompt_list in segment_prompts.items():
             for seg_idx, prompt in enumerate(prompt_list):
                 salt = _generate_salt()
+                custom_id = (
+                    f"cohort_{cohort_idx}_patient_{pid}_segment_{seg_idx}_{salt}"
+                )
 
+                logger.info(f"Generation prompt for {custom_id}: {prompt}")
                 batch_requests.append(
                     {
-                        "custom_id": f"cohort_{cohort_idx}_patient_{pid}_segment_{seg_idx}_{salt}",
+                        "custom_id": custom_id,
                         "method": "POST",
                         "url": "/v1/chat/completions",
                         "body": {
@@ -490,6 +543,7 @@ async def _handle_generation_stage(
             completion_window="24h",
         )
         state["generation_tickets"].append(batch_response.id)
+        logger.info(f"Submitted generation batch with ID: {batch_response.id}")
         state["stage"] = "check_generation"
         return state
     except Exception as e:
@@ -504,6 +558,7 @@ async def _handle_check_generation_stage(
     generator: str,
     embedder,
     verifier: str,
+    logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Check if generation batch is ready and start verification if so."""
     if not state["generation_tickets"]:
@@ -521,13 +576,13 @@ async def _handle_check_generation_stage(
 
             # Parse generation results
             state["generated_records"] = _parse_generation_results(
-                results, state["sampled_descriptions"]
+                results, state["sampled_descriptions"], logger
             )
 
             # Move to matching stage
             state["stage"] = "matching"
             return _handle_matching_stage(
-                client, state, chroma_db, embedder, cohort_specs, verifier
+                client, state, chroma_db, embedder, cohort_specs, verifier, logger
             )
 
         elif batch_status.status in ["failed", "expired", "cancelled"]:
@@ -544,7 +599,13 @@ async def _handle_check_generation_stage(
 
 
 async def _handle_matching_stage(
-    client: AsyncOpenAI, state: State, chroma_db, embedder, cohort_specs, verifier
+    client: AsyncOpenAI,
+    state: State,
+    chroma_db,
+    embedder,
+    cohort_specs,
+    verifier,
+    logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Handle code matching stage and start verification."""
     chroma_client = resolve_chroma_client(chroma_db)
@@ -557,11 +618,15 @@ async def _handle_matching_stage(
         state["coded_cohorts"].append(matched)
 
     # Start verification stage
-    return _start_verification_stage(client, state, cohort_specs, verifier)
+    return _start_verification_stage(client, state, cohort_specs, verifier, logger)
 
 
 async def _start_verification_stage(
-    client: AsyncOpenAI, state: State, cohort_specs: List[CohortSpec], verifier: str
+    client: AsyncOpenAI,
+    state: State,
+    cohort_specs: List[CohortSpec],
+    verifier: str,
+    logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Start verification stage using batch API."""
     # Prepare verification requests
@@ -575,10 +640,12 @@ async def _start_verification_stage(
         for record_idx, record in enumerate(cohort_records):
             prompt = create_verification_prompt(record, positive, negative)
             salt = _generate_salt()
+            custom_id = f"verify_cohort_{cohort_idx}_patient_{record_idx}_{salt}"
+            logger.info(f"Verification prompt for {custom_id}: {prompt}")
 
             batch_requests.append(
                 {
-                    "custom_id": f"verify_cohort_{cohort_idx}_patient_{record_idx}_{salt}",
+                    "custom_id": custom_id,
                     "method": "POST",
                     "url": "/v1/chat/completions",
                     "body": {
@@ -604,6 +671,7 @@ async def _start_verification_stage(
             completion_window="24h",
         )
         state["verification_tickets"].append(batch_response.id)
+        logger.info(f"Submitted verification batch with ID: {batch_response.id}")
         state["stage"] = "check_verification"
         return state
     except Exception as e:
@@ -611,7 +679,11 @@ async def _start_verification_stage(
 
 
 async def _handle_check_verification_stage(
-    client: AsyncOpenAI, state: State, cohort_specs: List[CohortSpec], verifier: str
+    client: AsyncOpenAI,
+    state: State,
+    cohort_specs: List[CohortSpec],
+    verifier: str,
+    logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Check if verification batch is ready."""
     if not state["verification_tickets"]:
@@ -628,7 +700,7 @@ async def _handle_check_verification_stage(
             results = _download_batch_results(client, batch_output)
 
             # Parse verification results
-            state["verifications"] = _parse_verification_results(results)
+            state["verifications"] = _parse_verification_results(results, logger)
 
             # Move to finalization
             state["stage"] = "finalize"
@@ -706,7 +778,9 @@ async def _download_batch_results(client: AsyncOpenAI, file_id: str) -> List[Dic
 
 
 def _parse_generation_results(
-    results: List[Dict], sampled_descriptions: List[Dict[int, PatientRecipe]]
+    results: List[Dict],
+    sampled_descriptions: List[Dict[int, PatientRecipe]],
+    logger: logging.Logger,
 ) -> List[Dict[int, UncodedPatient]]:
     """Parse generation results and organize by cohort, combining segments."""
     cohort_records = [{} for _ in sampled_descriptions]
@@ -719,9 +793,9 @@ def _parse_generation_results(
             cohort_idx = int(parts[1])
             patient_id = int(parts[3])
             seg_idx = int(parts[5])  # segment_{seg_idx}
-            flat_generation_response = GenerationResponse.model_validate_json(
-                result["response"]["body"]["choices"][0]["message"]["content"]
-            )
+            content = result["response"]["body"]["choices"][0]["message"]["content"]
+            logger.info(f"Generation response for {custom_id}: {content}")
+            flat_generation_response = GenerationResponse.model_validate_json(content)
             key = (cohort_idx, patient_id)
             if key not in segment_data:
                 segment_data[key] = []
@@ -740,7 +814,7 @@ def _parse_generation_results(
 
 
 def _parse_verification_results(
-    results: List[Dict],
+    results: List[Dict], logger: logging.Logger
 ) -> List[List[VerificationResponse]]:
     """Parse verification results and organize by cohort."""
     # Determine number of cohorts from results
@@ -758,9 +832,9 @@ def _parse_verification_results(
         if result.get("response", {}).get("status_code") == 200:
             custom_id = result["custom_id"]
             cohort_idx = int(custom_id.split("_")[2])
-            verification = VerificationResponse.model_validate_json(
-                result["response"]["body"]["choices"][0]["message"]["content"]
-            )
+            content = result["response"]["body"]["choices"][0]["message"]["content"]
+            logger.info(f"Verification response for {custom_id}: {content}")
+            verification = VerificationResponse.model_validate_json(content)
             cohort_verifications[cohort_idx].append(verification)
 
     return cohort_verifications
