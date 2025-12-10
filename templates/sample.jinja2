@@ -10,8 +10,7 @@ These patient recipes should NOT satisfy the following (negative) description: "
 * Output as JSON object: {(patient id): PatientRecipe}, ...}
 
 Use the advisory examples of stats from similar records:
-{% for stat in stats %}
-- total_codes: {{ stat.total_codes }}, unique_codes: {{ stat.unique_codes }}, duration: {{ stat.duration }}, num_times: {{ stat.num_times }}, avg_codes_per_time: {{ stat.avg_codes_per_time }}
+{% for stat in stats %} - total_codes: {{ stat.total_codes }}, unique_codes: {{ stat.unique_codes }}, duration: {{ stat.duration }}, num_times: {{ stat.num_times }}, avg_codes_per_time: {{ stat.avg_codes_per_time }} 
 {% endfor %}
 
 --- example output ---

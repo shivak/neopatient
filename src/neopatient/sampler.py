@@ -4,7 +4,7 @@ from typing import Dict, List, Any, Optional
 from openai import AsyncOpenAI
 import jinja2
 import pandas as pd
-from .models import PatientRecipe, SamplingResponse
+from .models import PatientRecipe, SamplingResponse, RecordType
 
 # Get the directory of the current file to construct template path
 _current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -16,8 +16,8 @@ SAMPLE_TEMPLATE = jinja2.Template(
 )
 
 
-def _get_csv_path(record_type: str) -> str:
-    if record_type == "ehr-inpatient":
+def _get_csv_path(record_type: RecordType) -> str:
+    if record_type == RecordType.EHR_INPATIENT:
         return os.path.join(_project_root, "stats", "ehr-inpatient.csv")
     else:
         return os.path.join(_project_root, "stats", "ehr-outpatient.csv")
@@ -33,7 +33,7 @@ async def sample_recipes(
     positive: str,
     negative: str,
     n: int,
-    record_type: str,
+    record_type: RecordType,
     sampler_model: str = "gpt-5",
     logger: Optional[logging.Logger] = None,
 ) -> Dict[int, PatientRecipe]:
@@ -47,7 +47,7 @@ async def sample_recipes(
         positive: Positive cohort description
         negative: Negative anti-cohort description
         n: Number of patients to sample
-        record_type: Type of record ("claims", "ehr-inpatient", "ehr-outpatient")
+         record_type: Type of record (RecordType enum)
         sampler_model: Model name for sampling (default: "gpt-5")
         logger: Optional logger for logging the LLM response
 
@@ -62,6 +62,8 @@ async def sample_recipes(
     prompt = SAMPLE_TEMPLATE.render(
         positive_cohort=positive, negative_cohort=negative, n=n, stats=stats
     )
+    if logger:
+        logger.info(f"Sampling prompt: {prompt}")
     response = await client.chat.completions.create(
         model=sampler_model,
         messages=[{"role": "user", "content": prompt}],

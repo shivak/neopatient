@@ -79,7 +79,7 @@ async def _main():
                 seed=args.seed,
                 generator=args.generator,
                 verifier=args.verifier,
-                record_type=args.record_type,
+                record_type=RecordType(args.record_type),
                 sampler=args.sampler,
             )
             logger.info("Patient record generated")

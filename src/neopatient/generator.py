@@ -82,15 +82,17 @@ def _generate_salt() -> str:
 
 
 def create_generation_prompts(
-    record_type: str, recipes: Dict[int, PatientRecipe]
+    record_type: RecordType, recipes: Dict[int, PatientRecipe]
 ) -> List[Tuple[int, str]]:
     """Create generation prompts from PatientRecipe objects, one per segment.
 
+    Args:
+        record_type: Type of record (RecordType enum)
+        recipes: Dict of {patient_id: PatientRecipe}
+
     Returns list of (patient_id, prompt) tuples.
     """
-    # Convert string to enum
-    record_type_enum = RecordType(record_type)
-    allowed_code_systems = CodeSystem.allowed_in(record_type_enum)
+    allowed_code_systems = CodeSystem.allowed_in(record_type)
 
     prompts = []
     for patient_id, recipe in recipes.items():
@@ -98,7 +100,7 @@ def create_generation_prompts(
             # Format dates for segment
             start_iso = segment.start_date.isoformat()
             end_iso = segment.end_date.isoformat()
-            if record_type in ["claims", "ehr-outpatient"]:
+            if record_type in [RecordType.CLAIMS, RecordType.EHR_OUTPATIENT]:
                 formatted_start = start_iso.split("T")[0]
                 formatted_end = end_iso.split("T")[0]
             else:
@@ -106,7 +108,7 @@ def create_generation_prompts(
                 formatted_end = end_iso
 
             prompt = GENERATION_TEMPLATE.render(
-                record_type=record_type,
+                record_type=record_type.value,
                 start_date=formatted_start,
                 end_date=formatted_end,
                 recipe=recipe,
@@ -131,7 +133,7 @@ async def synthesize_patient(
     seed: int | None = None,
     generator: str = "gpt-5",
     verifier: str = "gpt-5",
-    record_type: str = "ehr-outpatient",
+    record_type: RecordType = RecordType.EHR_OUTPATIENT,
     sampler: str = "gpt-5",
 ) -> Patient:
     """
@@ -153,7 +155,7 @@ async def synthesize_patient(
         seed: Optional seed for reproducibility
         generator: Model name for generation (default: "gpt-5")
         verifier: Model name for verification (default: "gpt-5")
-        record_type: Type of record ("claims", "ehr-inpatient", "ehr-outpatient") (default: "ehr-outpatient")
+        record_type: Type of record (RecordType enum) (default: RecordType.EHR_OUTPATIENT)
         sampler: Model name for sampling individualized descriptions (default: "gpt-5")
 
     Returns:
@@ -453,13 +455,13 @@ async def _handle_sampling_stage(
 
     # Sample for each cohort
     for spec in cohort_specs:
-        record_type = spec.record_type.value
         sampled = await sample_recipes(
             spec.positive,
             spec.negative,
             spec.count,
-            record_type,
+            spec.record_type,
             sampler,
+            logger,
         )
         state["sampled_descriptions"].append(sampled)
 
@@ -500,7 +502,7 @@ async def _handle_generation_stage(
         recipes = list(sampled.values())
         patient_ids = list(sampled.keys())
         prompts = create_generation_prompts(
-            spec.record_type.value, dict(zip(patient_ids, recipes))
+            spec.record_type, dict(zip(patient_ids, recipes))
         )
         segment_prompts = {}
         for pid, prompt in prompts:
