@@ -26,7 +26,6 @@ async def _main():
     add_embedder_args(single_parser)
     add_specification_args(single_parser)
     add_synthesis_args(single_parser)
-    single_parser.set_defaults(embedder_args={"model_kwargs": {"dtype": "bfloat16"}})
 
     # Cohort subcommand
     cohort_parser = subparsers.add_parser(
@@ -36,7 +35,6 @@ async def _main():
     add_specification_args(cohort_parser)
     add_synthesis_args(cohort_parser)
     add_state_args(cohort_parser)
-    cohort_parser.set_defaults(embedder="sentence-transformers/all-MiniLM-L6-v2")
     cohort_parser.add_argument(
         "--size", type=int, required=True, help="Size of the cohort"
     )
