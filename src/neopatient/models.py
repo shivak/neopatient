@@ -61,8 +61,8 @@ class RecordType(str, Enum):
 class CohortSpec(BaseModel):
     """Specification for a cohort of patients."""
 
-    positive: List[str] = Field(description="List of positive condition codes")
-    negative: List[str] = Field(description="List of negative condition codes")
+    positive: str = Field(description="Positive cohort description")
+    negative: str = Field(description="Negative cohort description")
     count: int = Field(description="Number of patients to generate")
     record_type: RecordType = Field(description="Type of record")
 

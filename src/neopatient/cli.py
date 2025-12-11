@@ -93,8 +93,8 @@ async def _main():
             logger.info("Generating patient cohort...")
             cohort_specs = [
                 CohortSpec(
-                    positive=[args.positive],
-                    negative=[args.negative],
+                    positive=args.positive,
+                    negative=args.negative,
                     count=args.size,
                     record_type=RecordType(args.record_type),
                 )
