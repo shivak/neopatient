@@ -5,6 +5,7 @@ import pathlib
 import sys
 import pyarrow as pa
 from pyarrow import parquet
+from openai import AsyncOpenAI
 from . import synthesize_patient, synthesize_cohort_with_state_file
 from .models import CohortSpec, RecordType
 from .cli_common import (
@@ -64,10 +65,14 @@ async def _main():
     # Set ChromaDB parameter
     chroma_db = pathlib.Path(args.db_dir) if args.db_dir else None
 
+    # Create OpenAI client
+    client = AsyncOpenAI(max_retries=0)
+
     if args.command == "single":
         try:
             logger.info("Generating patient record...")
             record = await synthesize_patient(
+                client,
                 positive=args.positive,
                 negative=args.negative,
                 patient_id=1,
@@ -100,6 +105,7 @@ async def _main():
                 )
             ]
             result = await synthesize_cohort_with_state_file(
+                client,
                 cohort_specs=cohort_specs,
                 chroma_db=chroma_db,
                 embedder_model=args.embedder,

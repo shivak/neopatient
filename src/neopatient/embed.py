@@ -49,7 +49,7 @@ def openai_embedder(
     Returns:
         Async embedder function that yields batches of embeddings
     """
-    client = AsyncOpenAI(base_url=embedder_base_url)
+    client = AsyncOpenAI(base_url=embedder_base_url, max_retries=0)
 
     async def embed(texts: List[str]) -> AsyncGenerator[List[List[float]], None]:
         # Truncate texts to 256 characters

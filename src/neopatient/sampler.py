@@ -30,6 +30,7 @@ def sample_patient_stats(csv_path: str, n: int) -> List[Dict[str, Any]]:
 
 
 async def sample_recipes(
+    client: AsyncOpenAI,
     positive: str,
     negative: str,
     n: int,
@@ -44,6 +45,7 @@ async def sample_recipes(
     constrained by the sampled duration.
 
     Args:
+        client: AsyncOpenAI client instance
         positive: Positive cohort description
         negative: Negative anti-cohort description
         n: Number of patients to sample
@@ -54,7 +56,6 @@ async def sample_recipes(
     Returns:
         Dict of {patient_id: PatientRecipe}
     """
-    client = AsyncOpenAI()  # Assume API key is set via environment
 
     csv_path = _get_csv_path(record_type)
     stats = sample_patient_stats(csv_path, n)

@@ -122,6 +122,7 @@ def create_generation_prompts(
 
 
 async def synthesize_patient(
+    client: AsyncOpenAI,
     positive: str,
     negative: str,
     patient_id: int,
@@ -145,6 +146,7 @@ async def synthesize_patient(
     Finally, verifies the record satisfies the cohort-level positive and negative descriptions.
 
     Args:
+        client: AsyncOpenAI client instance
         positive: Positive cohort description used for sampling and verification
         negative: Negative cohort description for sampling and verification
         patient_id: Unique patient identifier
@@ -171,14 +173,15 @@ async def synthesize_patient(
             embedder_model, embedder_batch_size, embedder_args, embedder_base_url
         )
     )
-    client = AsyncOpenAI()  # Assume API key is set via environment
     embedder = create_embedder(
         embedder_model, embedder_batch_size, embedder_args, embedder_base_url
     )
 
     print(f"Generating record using: {generator}")
 
-    sampled = await sample_recipes(positive, negative, 1, record_type, sampler, logger)
+    sampled = await sample_recipes(
+        client, positive, negative, 1, record_type, sampler, logger
+    )
     recipe = next(iter(sampled.values()))
 
     # Step 1: Generate tuples with LLM for each segment
@@ -247,6 +250,7 @@ async def synthesize_patient(
 
 
 async def synthesize_cohort(
+    client: AsyncOpenAI,
     cohort_specs: List[CohortSpec],
     chroma_db: Union[ClientAPI, pathlib.Path, None],
     embedder_model: str | None,
@@ -295,7 +299,6 @@ async def synthesize_cohort(
             embedder_model, embedder_batch_size, embedder_args, embedder_base_url
         )
     )
-    client = AsyncOpenAI()
     embedder = create_embedder(
         embedder_model, embedder_batch_size, embedder_args, embedder_base_url
     )
@@ -368,6 +371,7 @@ async def synthesize_cohort(
 
 
 async def synthesize_cohort_with_state_file(
+    client: AsyncOpenAI,
     cohort_specs: List[CohortSpec],
     chroma_db: Union[ClientAPI, pathlib.Path, None],
     embedder_model: str | None,
@@ -404,6 +408,7 @@ async def synthesize_cohort_with_state_file(
 
     while True:
         result = await synthesize_cohort(
+            client,
             cohort_specs=cohort_specs,
             chroma_db=chroma_db,
             embedder_model=embedder_model,
@@ -456,6 +461,7 @@ async def _handle_sampling_stage(
     # Sample for each cohort
     for spec in cohort_specs:
         sampled = await sample_recipes(
+            client,
             spec.positive,
             spec.negative,
             spec.count,
@@ -540,7 +546,7 @@ async def _handle_generation_stage(
     # Submit batch request
     try:
         batch_response = await client.batches.create(
-            input_file_id=await _create_jsonl_file(batch_requests),
+            input_file_id=await _create_jsonl_file(client, batch_requests),
             endpoint="/v1/chat/completions",
             completion_window="24h",
         )
@@ -668,7 +674,7 @@ async def _start_verification_stage(
     # Submit verification batch
     try:
         batch_response = client.batches.create(
-            input_file_id=_create_jsonl_file(batch_requests),
+            input_file_id=await _create_jsonl_file(client, batch_requests),
             endpoint="/v1/chat/completions",
             completion_window="24h",
         )
@@ -749,7 +755,7 @@ def _handle_finalize_stage(
     return final_results
 
 
-async def _create_jsonl_file(requests: List[Dict]) -> str:
+async def _create_jsonl_file(client: AsyncOpenAI, requests: List[Dict]) -> str:
     """Create a JSONL file from batch requests and upload to OpenAI."""
     import tempfile
     import os
@@ -761,7 +767,7 @@ async def _create_jsonl_file(requests: List[Dict]) -> str:
 
     try:
         with open(temp_path, "rb") as f:
-            file_response = await AsyncOpenAI().files.create(file=f, purpose="batch")
+            file_response = await client.files.create(file=f, purpose="batch")
         return file_response.id
     finally:
         os.unlink(temp_path)
