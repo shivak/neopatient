@@ -305,20 +305,13 @@ async def synthesize_cohort(
 
     # If resuming from state, use existing state
     if state is not None:
-        current_state = state.copy()
+        current_state = state
     else:
         # Initialize new state
-        current_state = {
-            "stage": "sampling",
-            "sampled_descriptions": [],
-            "generation_tickets": [],
-            "generated_records": [],
-            "verification_tickets": [],
-            "verifications": [],
-        }
+        current_state = State(stage="sampling")
 
     # Stage 1: Sample individual patients
-    if current_state["stage"] == "sampling":
+    if current_state.stage == "sampling":
         return await _handle_sampling_stage(
             client,
             current_state,
@@ -332,7 +325,7 @@ async def synthesize_cohort(
         )
 
     # Stage 2: Generate records using batch API
-    elif current_state["stage"] == "generation":
+    elif current_state.stage == "generation":
         return await _handle_generation_stage(
             client,
             current_state,
@@ -345,29 +338,29 @@ async def synthesize_cohort(
         )
 
     # Stage 2: Check generation results and apply code matching
-    elif current_state["stage"] == "check_generation":
+    elif current_state.stage == "check_generation":
         return await _handle_check_generation_stage(
             client, current_state, cohort_specs, generator
         )
 
     # Stage 3: Start verification with code-matched records
-    elif current_state["stage"] == "matching":
+    elif current_state.stage == "matching":
         return await _handle_matching_stage(
             client, current_state, chroma_db, embedder, cohort_specs, verifier, logger
         )
 
     # Stage 4: Check verification results
-    elif current_state["stage"] == "check_verification":
+    elif current_state.stage == "check_verification":
         return await _handle_check_verification_stage(
             client, current_state, cohort_specs, verifier, logger
         )
 
     # Stage 5: Process final results
-    elif current_state["stage"] == "finalize":
+    elif current_state.stage == "finalize":
         return _handle_finalize_stage(current_state, cohort_specs)
 
     else:
-        raise ValueError(f"Unknown stage: {current_state['stage']}")
+        raise ValueError(f"Unknown stage: {current_state.stage}")
 
 
 async def synthesize_cohort_with_state_file(
@@ -404,7 +397,7 @@ async def synthesize_cohort_with_state_file(
     state = None
     if state_file and pathlib.Path(state_file).exists():
         with open(state_file, "r") as f:
-            state = json.load(f)
+            state = State.model_validate(json.load(f))
 
     while True:
         result = await synthesize_cohort(
@@ -427,7 +420,7 @@ async def synthesize_cohort_with_state_file(
         else:
             if state_file:
                 with open(state_file, "w") as f:
-                    json.dump(result, f)
+                    json.dump(result.model_dump(), f)
             time.sleep(poll_interval)
             state = result
 
@@ -444,9 +437,9 @@ async def _handle_sampling_stage(
     logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Sample individual patient recipes for each cohort using the sampler LLM."""
-    if state["sampled_descriptions"]:
+    if state.sampled_descriptions:
         # Already sampled, move to generation
-        state["stage"] = "generation"
+        state.stage = "generation"
         return await _handle_generation_stage(
             client,
             state,
@@ -469,9 +462,9 @@ async def _handle_sampling_stage(
             sampler,
             logger,
         )
-        state["sampled_descriptions"].append(sampled)
+        state.sampled_descriptions.append(sampled)
 
-    state["stage"] = "generation"
+    state.stage = "generation"
     return await _handle_generation_stage(
         client, state, cohort_specs, generator, chroma_db, embedder, verifier, logger
     )
@@ -488,9 +481,9 @@ async def _handle_generation_stage(
     logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Handle the initial generation stage using batch API."""
-    if state["generation_tickets"]:
+    if state.generation_tickets:
         # Already submitted generation requests, move to checking
-        state["stage"] = "check_generation"
+        state.stage = "check_generation"
         return await _handle_check_generation_stage(
             client,
             state,
@@ -552,9 +545,9 @@ async def _handle_generation_stage(
             endpoint="/v1/chat/completions",
             completion_window="24h",
         )
-        state["generation_tickets"].append(batch_response.id)
+        state.generation_tickets.append(batch_response.id)
         logger.info(f"Submitted generation batch with ID: {batch_response.id}")
-        state["stage"] = "check_generation"
+        state.stage = "check_generation"
         return state
     except Exception as e:
         raise RuntimeError(f"Failed to submit batch generation request: {e}")
@@ -571,10 +564,10 @@ async def _handle_check_generation_stage(
     logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Check if generation batch is ready and start verification if so."""
-    if not state["generation_tickets"]:
+    if not state.generation_tickets:
         raise ValueError("No generation tickets found in state")
 
-    batch_id = state["generation_tickets"][0]
+    batch_id = state.generation_tickets[0]
 
     try:
         batch_status = await client.batches.retrieve(batch_id)
@@ -585,12 +578,12 @@ async def _handle_check_generation_stage(
             results = await _download_batch_results(client, batch_output)
 
             # Parse generation results
-            state["generated_records"] = _parse_generation_results(
-                results, state["sampled_descriptions"], logger
+            state.generated_records = _parse_generation_results(
+                results, state.sampled_descriptions, logger
             )
 
             # Move to matching stage
-            state["stage"] = "matching"
+            state.stage = "matching"
             return await _handle_matching_stage(
                 client, state, chroma_db, embedder, cohort_specs, verifier, logger
             )
@@ -621,11 +614,11 @@ async def _handle_matching_stage(
     chroma_client = resolve_chroma_client(chroma_db)
 
     # Apply code matching to all generated records
-    state["coded_cohorts"] = []
-    for cohort_idx, cohort_dict in enumerate(state["generated_records"]):
-        recipes = state["sampled_descriptions"][cohort_idx]
+    state.coded_cohorts = []
+    for cohort_idx, cohort_dict in enumerate(state.generated_records):
+        recipes = state.sampled_descriptions[cohort_idx]
         matched = await code_cohort(cohort_dict, recipes, chroma_client, embedder)
-        state["coded_cohorts"].append(matched)
+        state.coded_cohorts.append(matched)
 
     # Start verification stage
     return await _start_verification_stage(
@@ -682,9 +675,9 @@ async def _start_verification_stage(
             endpoint="/v1/chat/completions",
             completion_window="24h",
         )
-        state["verification_tickets"].append(batch_response.id)
+        state.verification_tickets.append(batch_response.id)
         logger.info(f"Submitted verification batch with ID: {batch_response.id}")
-        state["stage"] = "check_verification"
+        state.stage = "check_verification"
         return state
     except Exception as e:
         raise RuntimeError(f"Failed to submit batch verification request: {e}")
@@ -698,10 +691,10 @@ async def _handle_check_verification_stage(
     logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Check if verification batch is ready."""
-    if not state["verification_tickets"]:
+    if not state.verification_tickets:
         raise ValueError("No verification tickets found in state")
 
-    batch_id = state["verification_tickets"][0]
+    batch_id = state.verification_tickets[0]
 
     try:
         batch_status = await client.batches.retrieve(batch_id)
@@ -712,10 +705,10 @@ async def _handle_check_verification_stage(
             results = await _download_batch_results(client, batch_output)
 
             # Parse verification results
-            state["verifications"] = _parse_verification_results(results, logger)
+            state.verifications = _parse_verification_results(results, logger)
 
             # Move to finalization
-            state["stage"] = "finalize"
+            state.stage = "finalize"
             return _handle_finalize_stage(state, cohort_specs)
 
         elif batch_status.status in ["failed", "expired", "cancelled"]:
@@ -738,7 +731,7 @@ def _handle_finalize_stage(
     final_results = []
 
     for cohort_idx, (cohort_records, cohort_verifications) in enumerate(
-        zip(state["coded_cohorts"], state["verifications"])
+        zip(state.coded_cohorts, state.verifications)
     ):
         spec = cohort_specs[cohort_idx]
         target_count = spec.count

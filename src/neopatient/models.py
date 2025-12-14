@@ -1,8 +1,21 @@
-from typing import List, TypedDict, Dict, Union
+from __future__ import annotations
+
+from typing import List, Dict, Union, Annotated
 from enum import Enum
 from datetime import datetime
-from pydantic import BaseModel, RootModel, Field, model_validator, computed_field
+from pydantic import (
+    BaseModel,
+    RootModel,
+    Field,
+    model_validator,
+    computed_field,
+    PlainSerializer,
+    PlainValidator,
+)
 import pyarrow as pa
+import pyarrow.parquet as pq
+import base64
+from meds.schema import DataSchema
 
 
 class CodeSystem(str, Enum):
@@ -126,8 +139,35 @@ class GenerationResponse(BaseModel):
     )
 
 
+def _serialize_table(table: pa.Table, compression: str = "zstd") -> str:
+    sink = pa.BufferOutputStream()
+    pq.write_table(table, sink, compression=compression)
+    buf = sink.getvalue()
+    return base64.b64encode(buf.to_pybytes()).decode("utf-8")
+
+
+def _deserialize_table(b64_str: str) -> pa.Table:
+    buf = pa.py_buffer(base64.b64decode(b64_str))
+    return pq.read_table(buf)
+
+
+def _serialize_patient_table(t: pa.Table) -> str:
+    return _serialize_table(t, compression=None)
+
+
+def _validate_patient_table(table) -> pa.Table:
+    if isinstance(table, str): 
+        table = _deserialize_table(table)
+    DataSchema.validate(table)
+    return table
+
+
 # Type alias for a single patient's MEDS data table
-type Patient = pa.Table
+Patient = Annotated[
+    pa.Table,
+    PlainValidator(_validate_patient_table),
+    PlainSerializer(_serialize_patient_table),
+]
 
 # Type alias for a cohort of patients
 type Cohort = list[Patient]
@@ -208,12 +248,11 @@ class SamplingResponse(RootModel[Dict[int, PatientRecipe]]):
     pass
 
 
-class State(TypedDict, total=False):
+class State(BaseModel):
     stage: str
-    sampled_descriptions: List[Dict[int, PatientRecipe]]
-    generation_tickets: List[str]
-    generated_records: List[Dict[int, UncodedPatient]]
-    verification_tickets: List[str]
-    verifications: List[List[VerificationResponse]]
-    patient_ids: List[List[int]]
-    coded_cohorts: List[Cohort]
+    sampled_descriptions: list[dict[int, PatientRecipe]] = Field(default_factory=list)
+    generation_tickets: list[str] = Field(default_factory=list)
+    generated_records: list[dict[int, UncodedPatient]] = Field(default_factory=list)
+    verification_tickets: list[str] = Field(default_factory=list)
+    verifications: list[list[VerificationResponse]] = Field(default_factory=list)
+    coded_cohorts: list[Cohort] = Field(default_factory=list)
