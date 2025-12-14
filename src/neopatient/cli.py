@@ -14,6 +14,7 @@ from .cli_common import (
     add_synthesis_args,
     add_state_args,
 )
+from .llm import apply_rate_limiting
 
 
 async def _main():
@@ -68,6 +69,10 @@ async def _main():
     # Create OpenAI client
     client = AsyncOpenAI(max_retries=0)
 
+    # Apply rate limiting if requested
+    if hasattr(args, "llm_per_min") and args.llm_per_min is not None:
+        apply_rate_limiting(client, requests_per_minute=args.llm_per_min)
+
     if args.command == "single":
         try:
             logger.info("Generating patient record...")
@@ -81,7 +86,6 @@ async def _main():
                 embedder_batch_size=args.embedder_batch_size,
                 embedder_args=args.embedder_args,
                 embedder_base_url=args.embedder_base_url,
-                seed=args.seed,
                 generator=args.generator,
                 verifier=args.verifier,
                 record_type=RecordType(args.record_type),

@@ -52,6 +52,11 @@ def add_synthesis_args(parser):
         help="Model name for sampling individualized descriptions",
     )
     parser.add_argument(
+        "--llm-per-min",
+        type=int,
+        help="Maximum LLM requests per minute (optional rate limiting)",
+    )
+    parser.add_argument(
         "--db_dir",
         default=None,
         help="Path to ChromaDB database directory, or None to download from Hugging Face",

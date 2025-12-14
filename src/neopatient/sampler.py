@@ -86,7 +86,7 @@ async def sample_recipes(
     sampling_response = SamplingResponse.model_validate_json(content)
 
     # Validate that we have n entries
-    if len(sampling_response.root) != n:
+    if len(sampling_response.root) < n:
         raise ValueError(f"Expected {n} samples, got {len(sampling_response.root)}")
 
     return sampling_response.root

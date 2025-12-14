@@ -472,7 +472,9 @@ async def _handle_sampling_stage(
         state["sampled_descriptions"].append(sampled)
 
     state["stage"] = "generation"
-    return _handle_generation_stage(client, state, cohort_specs, sampler)
+    return await _handle_generation_stage(
+        client, state, cohort_specs, generator, chroma_db, embedder, verifier, logger
+    )
 
 
 async def _handle_generation_stage(
@@ -575,12 +577,12 @@ async def _handle_check_generation_stage(
     batch_id = state["generation_tickets"][0]
 
     try:
-        batch_status = client.batches.retrieve(batch_id)
+        batch_status = await client.batches.retrieve(batch_id)
 
         if batch_status.status == "completed":
             # Download results
-            batch_output = client.batches.retrieve(batch_id).output_file_id
-            results = _download_batch_results(client, batch_output)
+            batch_output = (await client.batches.retrieve(batch_id)).output_file_id
+            results = await _download_batch_results(client, batch_output)
 
             # Parse generation results
             state["generated_records"] = _parse_generation_results(
@@ -589,7 +591,7 @@ async def _handle_check_generation_stage(
 
             # Move to matching stage
             state["stage"] = "matching"
-            return _handle_matching_stage(
+            return await _handle_matching_stage(
                 client, state, chroma_db, embedder, cohort_specs, verifier, logger
             )
 
@@ -626,7 +628,9 @@ async def _handle_matching_stage(
         state["coded_cohorts"].append(matched)
 
     # Start verification stage
-    return _start_verification_stage(client, state, cohort_specs, verifier, logger)
+    return await _start_verification_stage(
+        client, state, cohort_specs, verifier, logger
+    )
 
 
 async def _start_verification_stage(
@@ -673,7 +677,7 @@ async def _start_verification_stage(
 
     # Submit verification batch
     try:
-        batch_response = client.batches.create(
+        batch_response = await client.batches.create(
             input_file_id=await _create_jsonl_file(client, batch_requests),
             endpoint="/v1/chat/completions",
             completion_window="24h",
@@ -700,12 +704,12 @@ async def _handle_check_verification_stage(
     batch_id = state["verification_tickets"][0]
 
     try:
-        batch_status = client.batches.retrieve(batch_id)
+        batch_status = await client.batches.retrieve(batch_id)
 
         if batch_status.status == "completed":
             # Download results
-            batch_output = client.batches.retrieve(batch_id).output_file_id
-            results = _download_batch_results(client, batch_output)
+            batch_output = (await client.batches.retrieve(batch_id)).output_file_id
+            results = await _download_batch_results(client, batch_output)
 
             # Parse verification results
             state["verifications"] = _parse_verification_results(results, logger)
