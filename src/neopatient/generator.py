@@ -8,6 +8,8 @@ import time
 from typing import Dict, List, Union, Tuple
 import pathlib
 from openai import AsyncOpenAI
+from google import genai
+from google.genai import types
 import jinja2
 
 from chromadb.api import ClientAPI
@@ -539,7 +541,9 @@ async def _handle_generation_stage(
     # Submit batch request
     try:
         batch_response = await client.batches.create(
-            input_file_id=await _create_jsonl_file(client, batch_requests),
+            input_file_id=await _create_jsonl_file(
+                client, batch_requests, generator, logger
+            ),
             endpoint="/v1/chat/completions",
             completion_window="24h",
         )
@@ -669,7 +673,9 @@ async def _start_verification_stage(
     # Submit verification batch
     try:
         batch_response = await client.batches.create(
-            input_file_id=await _create_jsonl_file(client, batch_requests),
+            input_file_id=await _create_jsonl_file(
+                client, batch_requests, verifier, logger
+            ),
             endpoint="/v1/chat/completions",
             completion_window="24h",
         )
@@ -750,20 +756,37 @@ def _handle_finalize_stage(
     return final_results
 
 
-async def _create_jsonl_file(client: AsyncOpenAI, requests: List[Dict]) -> str:
-    """Create a JSONL file from batch requests and upload to OpenAI."""
+async def _create_jsonl_file(
+    client: AsyncOpenAI,
+    requests: List[Dict],
+    model: str,
+    logger: logging.Logger | None = None,
+) -> str:
+    """Create a JSONL file from batch requests and upload to OpenAI or Gemini."""
     import tempfile
     import os
 
+    jsonl_content = "\n".join(json.dumps(request, default=str) for request in requests)
+    if logger and logger.isEnabledFor(logging.DEBUG):
+        logger.debug(f"Batch JSONL content: {jsonl_content}")
+
     with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
-        for request in requests:
-            f.write(json.dumps(request, default=str) + "\n")
+        f.write(jsonl_content + "\n")
         temp_path = f.name
 
     try:
-        with open(temp_path, "rb") as f:
-            file_response = await client.files.create(file=f, purpose="batch")
-        return file_response.id
+        if "gemini" in model.lower():
+            # TODO: Factor out genai configuration to avoid using OPENAI_API_KEY for Gemini
+            client_genai = genai.Client(api_key=os.getenv("OPENAI_API_KEY"))
+            file = client_genai.files.upload(
+                file=temp_path,
+                config=types.UploadFileConfig(mime_type="application/jsonl"),
+            )
+            return file.name
+        else:
+            with open(temp_path, "rb") as f:
+                file_response = await client.files.create(file=f, purpose="batch")
+            return file_response.id
     finally:
         os.unlink(temp_path)
 
