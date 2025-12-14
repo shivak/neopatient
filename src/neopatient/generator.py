@@ -14,6 +14,19 @@ from chromadb.api import ClientAPI
 from .matcher import code_patient, code_cohort
 from .database import resolve_chroma_client
 from .embed import create_embedder
+from .models import (
+    UncodedPatient,
+    VerificationResponse,
+    State,
+    Patient,
+    Cohort,
+    PatientRecipe,
+    GenerationResponse,
+    CohortSpec,
+    CodeSystem,
+    RecordType,
+)
+from .sampler import sample_recipes
 
 
 def fill_embedder_defaults(
@@ -29,21 +42,6 @@ def fill_embedder_defaults(
         embedder_args if embedder_args is not None else {},
         embedder_base_url,
     )
-
-
-from .models import (
-    UncodedPatient,
-    VerificationResponse,
-    State,
-    Patient,
-    Cohort,
-    PatientRecipe,
-    GenerationResponse,
-    CohortSpec,
-    CodeSystem,
-    RecordType,
-)
-from .sampler import sample_recipes
 
 
 # Load Jinja2 template from file
@@ -498,7 +496,7 @@ async def _handle_generation_stage(
     # Prepare batch requests
     batch_requests = []
 
-    for cohort_idx, sampled in enumerate(state["sampled_descriptions"]):
+    for cohort_idx, sampled in enumerate(state.sampled_descriptions):
         spec = cohort_specs[cohort_idx]
         recipes = list(sampled.values())
         patient_ids = list(sampled.keys())
@@ -637,7 +635,7 @@ async def _start_verification_stage(
     # Prepare verification requests
     batch_requests = []
 
-    for cohort_idx, cohort_records in enumerate(state["coded_cohorts"]):
+    for cohort_idx, cohort_records in enumerate(state.coded_cohorts):
         spec = cohort_specs[cohort_idx]
         positive = spec.positive
         negative = spec.negative
