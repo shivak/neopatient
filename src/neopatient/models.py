@@ -71,6 +71,19 @@ class RecordType(str, Enum):
     CLAIMS = "claims"
 
 
+class Stage(str, Enum):
+    """Enumeration of synthesis stages."""
+
+    SAMPLING = "sampling"
+    CHECK_SAMPLING = "check_sampling"
+    GENERATION = "generation"
+    CHECK_GENERATION = "check_generation"
+    MATCHING = "matching"
+    VERIFICATION = "verification"
+    CHECK_VERIFICATION = "check_verification"
+    FINALIZE = "finalize"
+
+
 class CohortSpec(BaseModel):
     """Specification for a cohort of patients."""
 
@@ -249,7 +262,7 @@ class SamplingResponse(RootModel[Dict[int, PatientRecipe]]):
 
 
 class State(BaseModel):
-    stage: str
+    stage: Stage
     sampled_recipes: list[dict[int, PatientRecipe]] = Field(default_factory=list)
     sampling_batch_id: str | None = None
     generation_batch_id: str | None = None

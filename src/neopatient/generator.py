@@ -27,6 +27,7 @@ from .models import (
     CohortSpec,
     CodeSystem,
     RecordType,
+    Stage,
 )
 from .sampler import (
     sample_recipes,
@@ -183,7 +184,6 @@ async def synthesize_patient(
         embedder_model, embedder_batch_size, embedder_args, embedder_base_url
     )
 
-
     # Sample recipe
     sampled = await sample_recipes(
         client, positive, negative, 1, record_type, sampler, logger
@@ -312,123 +312,77 @@ async def synthesize_cohorts(
         current_state = state
     else:
         # Initialize new state
-        current_state = State(stage="sampling")
+        current_state = State(stage=Stage.SAMPLING)
 
-    # Stage 1: Sample individual patients
-    if current_state.stage == "sampling":
-        return await _handle_sampling_stage(
-            batch_llm,
-            current_state,
-            cohort_specs,
-            sampler,
-            generator,
-            chroma_db,
-            embedder,
-            verifier,
-            logger,
-        )
-
-    # Stage 1.5: Check sampling batch results
-    elif current_state.stage == "check_sampling":
-        return await _handle_check_sampling_stage(
-            batch_llm,
-            current_state,
-            cohort_specs,
-            sampler,
-            generator,
-            chroma_db,
-            embedder,
-            verifier,
-            logger,
-        )
-
-    # Stage 2: Generate records using batch API
-    elif current_state.stage == "generation":
-        return await _handle_generation_stage(
-            batch_llm,
-            current_state,
-            cohort_specs,
-            generator,
-            chroma_db,
-            embedder,
-            verifier,
-            logger,
-        )
-
-    # Stage 2: Check generation results and apply code matching
-    elif current_state.stage == "check_generation":
-        return await _handle_check_generation_stage(
-            batch_llm,
-            current_state,
-            cohort_specs,
-            chroma_db,
-            generator,
-            embedder,
-            verifier,
-            logger,
-        )
-
-    # Stage 3: Start verification with code-matched records
-    elif current_state.stage == "matching":
-        return await _handle_matching_stage(
-            batch_llm,
-            current_state,
-            chroma_db,
-            embedder,
-            cohort_specs,
-            verifier,
-            logger,
-        )
-
-    # Stage 4: Verify records satisfy cohort criteria
-    elif current_state.stage == "verification":
-        return await _start_verification_stage(
-            batch_llm, current_state, cohort_specs, verifier, logger
-        )
-
-    # Stage 4: Check verification results
-    elif current_state.stage == "check_verification":
-        return await _handle_check_verification_stage(
-            batch_llm, current_state, cohort_specs, verifier, logger
-        )
-
-    # Stage 2: Generate records using batch API
-    elif current_state.stage == "generation":
-        return await _handle_generation_stage(
-            client,
-            current_state,
-            cohort_specs,
-            generator,
-            chroma_db,
-            embedder,
-            verifier,
-            logger,
-        )
-
-    # Stage 2: Check generation results and apply code matching
-    elif current_state.stage == "check_generation":
-        return await _handle_check_generation_stage(
-            client, current_state, cohort_specs, generator
-        )
-
-    # Stage 3: Start verification with code-matched records
-    elif current_state.stage == "matching":
-        return await _handle_matching_stage(
-            client, current_state, chroma_db, embedder, cohort_specs, verifier, logger
-        )
-
-    # Stage 4: Check verification results
-    elif current_state.stage == "check_verification":
-        return await _handle_check_verification_stage(
-            client, current_state, cohort_specs, verifier, logger
-        )
-
-    # Stage 5: Process final results
-    elif current_state.stage == "finalize":
-        return _handle_finalize_stage(current_state, cohort_specs)
-
-    else:
-        raise ValueError(f"Unknown stage: {current_state.stage}")
+    match current_state.stage:
+        case Stage.SAMPLING:
+            return await _handle_sampling_stage(
+                batch_llm,
+                current_state,
+                cohort_specs,
+                sampler,
+                generator,
+                chroma_db,
+                embedder,
+                verifier,
+                logger,
+            )
+        case Stage.CHECK_SAMPLING:
+            return await _handle_check_sampling_stage(
+                batch_llm,
+                current_state,
+                cohort_specs,
+                sampler,
+                generator,
+                chroma_db,
+                embedder,
+                verifier,
+                logger,
+            )
+        case Stage.GENERATION:
+            return await _handle_generation_stage(
+                batch_llm,
+                current_state,
+                cohort_specs,
+                generator,
+                chroma_db,
+                embedder,
+                verifier,
+                logger,
+            )
+        case Stage.CHECK_GENERATION:
+            return await _handle_check_generation_stage(
+                batch_llm,
+                current_state,
+                cohort_specs,
+                chroma_db,
+                generator,
+                embedder,
+                verifier,
+                logger,
+            )
+        case Stage.MATCHING:
+            return await _handle_matching_stage(
+                batch_llm,
+                current_state,
+                chroma_db,
+                embedder,
+                cohort_specs,
+                verifier,
+                logger,
+            )
+        case Stage.VERIFICATION:
+            return await _start_verification_stage(
+                batch_llm, current_state, cohort_specs, verifier, logger
+            )
+        case Stage.CHECK_VERIFICATION:
+            return await _handle_check_verification_stage(
+                batch_llm, current_state, cohort_specs, verifier, logger
+            )
+        case Stage.FINALIZE:
+            return _handle_finalize_stage(current_state, cohort_specs)
+        case _:
+            raise ValueError(f"Unknown stage: {current_state.stage}")
 
 
 async def synthesize_cohorts_with_state_file(
@@ -505,17 +459,8 @@ async def _handle_sampling_stage(
     """Sample individual patient recipes for each cohort using batch processing."""
     if state.sampled_recipes:
         # Already sampled, move to generation
-        state.stage = "generation"
-        return await _handle_generation_stage(
-            batch_llm,
-            state,
-            cohort_specs,
-            generator,
-            chroma_db,
-            embedder,
-            verifier,
-            logger,
-        )
+        state.stage = Stage.GENERATION
+    return state
 
     # Create batch sampling requests for all cohorts
     prompts_by_id = {}
@@ -544,7 +489,7 @@ async def _handle_sampling_stage(
     schema = SamplingResponse.model_json_schema()
     batch_id = await batch_llm.ask(prompts_by_id, schema, sampler)
     state.sampling_batch_id = batch_id
-    state.stage = "check_sampling"
+    state.stage = Stage.CHECK_SAMPLING
 
     return state
 
@@ -606,17 +551,8 @@ async def _handle_check_sampling_stage(
         )
 
     state.sampled_recipes = [cohort_results[i] for i in range(len(cohort_specs))]
-    state.stage = "generation"
-    return await _handle_generation_stage(
-        batch_llm,
-        state,
-        cohort_specs,
-        generator,
-        chroma_db,
-        embedder,
-        verifier,
-        logger,
-    )
+    state.stage = Stage.GENERATION
+    return state
 
 
 async def _handle_generation_stage(
@@ -659,7 +595,7 @@ async def _handle_generation_stage(
         schema = GenerationResponse.model_json_schema()
         batch_id = await batch_llm.ask(prompts_by_id, schema, generator)
         state.generation_batch_id = batch_id
-        state.stage = "check_generation"
+        state.stage = Stage.CHECK_GENERATION
         return state
     except Exception as e:
         raise RuntimeError(f"Failed to submit batch generation request: {e}")
@@ -690,10 +626,8 @@ async def _handle_check_generation_stage(
         results, state.sampled_recipes, logger
     )
 
-    state.stage = "matching"
-    return await _handle_matching_stage(
-        batch_llm, state, chroma_db, embedder, cohort_specs, verifier, logger
-    )
+    state.stage = Stage.MATCHING
+    return state
 
 
 async def _handle_matching_stage(
@@ -716,9 +650,8 @@ async def _handle_matching_stage(
         state.coded_cohorts.append(matched)
 
     # Start verification stage
-    return await _start_verification_stage(
-        batch_llm, state, cohort_specs, verifier, logger
-    )
+    state.stage = Stage.VERIFICATION
+    return state
 
 
 async def _start_verification_stage(
@@ -750,7 +683,7 @@ async def _start_verification_stage(
         schema = VerificationResponse.model_json_schema()
         batch_id = await batch_llm.ask(prompts_by_id, schema, verifier)
         state.verification_batch_id = batch_id
-        state.stage = "check_verification"
+        state.stage = Stage.CHECK_VERIFICATION
         return state
     except Exception as e:
         raise RuntimeError(f"Failed to submit batch verification request: {e}")
@@ -775,8 +708,8 @@ async def _handle_check_verification_stage(
     results = await batch_llm.get(batch_id)
     state.verifications = _parse_verification_results(results, logger)
 
-    state.stage = "finalize"
-    return _handle_finalize_stage(state, cohort_specs)
+    state.stage = Stage.FINALIZE
+    return state
 
 
 def _handle_finalize_stage(
