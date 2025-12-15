@@ -1,7 +1,6 @@
 """Batch LLM abstraction for different providers."""
 
 import json
-import logging
 import os
 import tempfile
 from abc import ABC, abstractmethod
@@ -9,7 +8,6 @@ from typing import Dict, List
 
 from openai import AsyncOpenAI
 from google import genai
-from google.genai import types
 
 
 class BatchLLM(ABC):
@@ -25,16 +23,6 @@ class BatchLLM(ABC):
     @abstractmethod
     async def is_done(self, batch_id: str) -> bool:
         """Check if batch is completed. Returns True if done, False if still processing, raises RuntimeError if failed."""
-        pass
-
-    @abstractmethod
-    async def get(self, batch_id: str) -> List[Dict]:
-        """Retrieve completed batch results."""
-        pass
-
-    @abstractmethod
-    async def get(self, batch_id: str) -> List[Dict]:
-        """Retrieve completed batch results."""
         pass
 
     @abstractmethod

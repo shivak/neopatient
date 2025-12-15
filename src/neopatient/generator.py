@@ -8,8 +8,6 @@ import time
 from typing import Dict, List, Union, Tuple
 import pathlib
 from openai import AsyncOpenAI
-from google import genai
-from google.genai import types
 import jinja2
 
 from chromadb.api import ClientAPI
@@ -24,6 +22,7 @@ from .models import (
     Cohort,
     PatientRecipe,
     GenerationResponse,
+    SamplingResponse,
     CohortSpec,
     CodeSystem,
     RecordType,
@@ -510,21 +509,12 @@ async def _handle_check_sampling_stage(
         raise ValueError("No sampling batch ID found in state")
 
     batch_id = state.sampling_batch_id
-
     is_done = await batch_llm.is_done(batch_id)
-
     if not is_done:
-        # Still processing, return state to resume later
         return state
-
-    # Get batch results
     results = await batch_llm.get(batch_id)
 
-    # Parse and distribute results to cohorts
-    from .models import SamplingResponse
-
     cohort_results: dict[int, dict[int, PatientRecipe]] = {}
-
     for result in results:
         if result.get("response", {}).get("status_code") == 200:
             custom_id = result["custom_id"]
