@@ -679,19 +679,12 @@ def _handle_finalize_stage(
     for spec, cohort, cohort_ids in zip(
         cohort_specs, state.coded_cohorts, state.sampled_ids
     ):
-        satisfactory_records = [
+        satisfactory_patients = [
             record
             for record, pid in zip(cohort, cohort_ids)
             if state.verifications[pid].satisfactory
-        ][: spec.count]
-        if satisfactory_records:
-            final_results.append(satisfactory_records)
-        if len(satisfactory_records) < spec.count:
-            cohort_idx = cohort_specs.index(spec)
-            print(
-                f"Warning: Cohort {cohort_idx} has only {len(satisfactory_records)} satisfactory records, expected {spec.count}",
-                file=sys.stderr,
-            )
+        ]
+        final_results.append(satisfactory_patients)
 
     return final_results
 
