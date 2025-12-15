@@ -288,6 +288,7 @@ async def synthesize_cohorts(
         # Initialize new state
         current_state = State(stage=Stage.SAMPLING)
 
+    logger.info(f"Current state: {current_state}")
     match current_state.stage:
         case Stage.SAMPLING:
             return await _handle_sampling_stage(
@@ -431,11 +432,6 @@ async def _handle_sampling_stage(
     logger: logging.Logger,
 ) -> list[Cohort] | State:
     """Sample individual patient recipes for each cohort using batch processing."""
-    if state.sampled_recipes:
-        # Already sampled, move to generation
-        state.stage = Stage.GENERATION
-    return state
-
     # Create batch sampling requests for all cohorts
     prompts_by_id = {}
     cohort_info = []  # Track (cohort_idx, expected_count) for validation
@@ -458,8 +454,6 @@ async def _handle_sampling_stage(
         logger.info(f"Sampling prompt for cohort {cohort_idx}: {prompt[:100]}...")
 
     # Submit batch sampling request
-    from .models import SamplingResponse
-
     schema = SamplingResponse.model_json_schema()
     batch_id = await batch_llm.ask(prompts_by_id, schema, sampler)
     state.sampling_batch_id = batch_id

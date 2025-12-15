@@ -131,7 +131,7 @@ class BatchGemini(BatchLLM):
     """Gemini batch implementation."""
 
     def __init__(self):
-        self.client = genai.Client(api_key=os.getenv("OPENAI_API_KEY"))
+        self.client = genai.Client(api_key=os.getenv("OPENAI_API_KEY")).aio
         self._batch_id_to_custom_ids = {}  # batch_id -> list of custom_ids
 
     async def ask(

@@ -75,7 +75,6 @@ async def _main():
 
     if args.command == "single":
         try:
-            logger.info("Generating patient record...")
             record = await synthesize_patient(
                 client,
                 positive=args.positive,
@@ -99,7 +98,6 @@ async def _main():
 
     elif args.command == "cohort":
         try:
-            logger.info("Generating patient cohort...")
             cohort_specs = [
                 CohortSpec(
                     positive=args.positive,
