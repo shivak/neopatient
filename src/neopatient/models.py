@@ -156,7 +156,7 @@ def _serialize_patient_table(t: pa.Table) -> str:
 
 
 def _validate_patient_table(table) -> pa.Table:
-    if isinstance(table, str): 
+    if isinstance(table, str):
         table = _deserialize_table(table)
     DataSchema.validate(table)
     return table
@@ -250,9 +250,10 @@ class SamplingResponse(RootModel[Dict[int, PatientRecipe]]):
 
 class State(BaseModel):
     stage: str
-    sampled_descriptions: list[dict[int, PatientRecipe]] = Field(default_factory=list)
-    generation_tickets: list[str] = Field(default_factory=list)
+    sampled_recipes: list[dict[int, PatientRecipe]] = Field(default_factory=list)
+    sampling_batch_id: str | None = None
+    generation_batch_id: str | None = None
     generated_records: list[dict[int, UncodedPatient]] = Field(default_factory=list)
-    verification_tickets: list[str] = Field(default_factory=list)
+    verification_batch_id: str | None = None
     verifications: list[list[VerificationResponse]] = Field(default_factory=list)
     coded_cohorts: list[Cohort] = Field(default_factory=list)

@@ -6,7 +6,7 @@ import sys
 import pyarrow as pa
 from pyarrow import parquet
 from openai import AsyncOpenAI
-from . import synthesize_patient, synthesize_cohort_with_state_file
+from . import synthesize_patient, synthesize_cohorts_with_state_file
 from .models import CohortSpec, RecordType
 from .cli_common import (
     add_embedder_args,
@@ -108,8 +108,7 @@ async def _main():
                     record_type=RecordType(args.record_type),
                 )
             ]
-            result = await synthesize_cohort_with_state_file(
-                client,
+            result = await synthesize_cohorts_with_state_file(
                 cohort_specs=cohort_specs,
                 chroma_db=chroma_db,
                 embedder_model=args.embedder,

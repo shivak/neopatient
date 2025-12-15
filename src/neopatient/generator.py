@@ -28,7 +28,13 @@ from .models import (
     CodeSystem,
     RecordType,
 )
-from .sampler import sample_recipes
+from .sampler import (
+    sample_recipes,
+    SAMPLE_TEMPLATE,
+    sample_patient_stats,
+    _get_csv_path,
+)
+from .batch_llm import create_batch_llm, BatchLLM
 
 
 def fill_embedder_defaults(
@@ -249,8 +255,7 @@ async def synthesize_patient(
     return record
 
 
-async def synthesize_cohort(
-    client: AsyncOpenAI,
+async def synthesize_cohorts(
     cohort_specs: List[CohortSpec],
     chroma_db: Union[ClientAPI, pathlib.Path, None],
     embedder_model: str | None,
@@ -264,6 +269,10 @@ async def synthesize_cohort(
     sampler: str = "gpt-5",
 ) -> Union[List[Cohort], State]:
     logger = logging.getLogger(__name__)
+
+    # Create batch LLM instance
+    batch_llm = create_batch_llm(generator)
+
     """
     Generates synthetic patient records in batch using OpenAI's batch API.
 
@@ -313,7 +322,7 @@ async def synthesize_cohort(
     # Stage 1: Sample individual patients
     if current_state.stage == "sampling":
         return await _handle_sampling_stage(
-            client,
+            batch_llm,
             current_state,
             cohort_specs,
             sampler,
@@ -322,6 +331,70 @@ async def synthesize_cohort(
             embedder,
             verifier,
             logger,
+        )
+
+    # Stage 1.5: Check sampling batch results
+    elif current_state.stage == "check_sampling":
+        return await _handle_check_sampling_stage(
+            batch_llm,
+            current_state,
+            cohort_specs,
+            sampler,
+            generator,
+            chroma_db,
+            embedder,
+            verifier,
+            logger,
+        )
+
+    # Stage 2: Generate records using batch API
+    elif current_state.stage == "generation":
+        return await _handle_generation_stage(
+            batch_llm,
+            current_state,
+            cohort_specs,
+            generator,
+            chroma_db,
+            embedder,
+            verifier,
+            logger,
+        )
+
+    # Stage 2: Check generation results and apply code matching
+    elif current_state.stage == "check_generation":
+        return await _handle_check_generation_stage(
+            batch_llm,
+            current_state,
+            cohort_specs,
+            chroma_db,
+            generator,
+            embedder,
+            verifier,
+            logger,
+        )
+
+    # Stage 3: Start verification with code-matched records
+    elif current_state.stage == "matching":
+        return await _handle_matching_stage(
+            batch_llm,
+            current_state,
+            chroma_db,
+            embedder,
+            cohort_specs,
+            verifier,
+            logger,
+        )
+
+    # Stage 4: Verify records satisfy cohort criteria
+    elif current_state.stage == "verification":
+        return await _start_verification_stage(
+            batch_llm, current_state, cohort_specs, verifier, logger
+        )
+
+    # Stage 4: Check verification results
+    elif current_state.stage == "check_verification":
+        return await _handle_check_verification_stage(
+            batch_llm, current_state, cohort_specs, verifier, logger
         )
 
     # Stage 2: Generate records using batch API
@@ -363,8 +436,7 @@ async def synthesize_cohort(
         raise ValueError(f"Unknown stage: {current_state.stage}")
 
 
-async def synthesize_cohort_with_state_file(
-    client: AsyncOpenAI,
+async def synthesize_cohorts_with_state_file(
     cohort_specs: List[CohortSpec],
     chroma_db: Union[ClientAPI, pathlib.Path, None],
     embedder_model: str | None,
@@ -400,8 +472,7 @@ async def synthesize_cohort_with_state_file(
             state = State.model_validate(json.load(f))
 
     while True:
-        result = await synthesize_cohort(
-            client,
+        result = await synthesize_cohorts(
             cohort_specs=cohort_specs,
             chroma_db=chroma_db,
             embedder_model=embedder_model,
@@ -426,7 +497,7 @@ async def synthesize_cohort_with_state_file(
 
 
 async def _handle_sampling_stage(
-    client: AsyncOpenAI,
+    batch_llm: BatchLLM,
     state: State,
     cohort_specs: List[CohortSpec],
     sampler: str,
@@ -436,12 +507,12 @@ async def _handle_sampling_stage(
     verifier: str,
     logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
-    """Sample individual patient recipes for each cohort using the sampler LLM."""
-    if state.sampled_descriptions:
+    """Sample individual patient recipes for each cohort using batch processing."""
+    if state.sampled_recipes:
         # Already sampled, move to generation
         state.stage = "generation"
         return await _handle_generation_stage(
-            client,
+            batch_llm,
             state,
             cohort_specs,
             generator,
@@ -451,18 +522,120 @@ async def _handle_sampling_stage(
             logger,
         )
 
-    # Sample for each cohort
-    for spec in cohort_specs:
-        sampled = await sample_recipes(
-            client,
-            spec.positive,
-            spec.negative,
-            spec.count,
-            spec.record_type,
-            sampler,
-            logger,
+    # Create batch sampling requests for all cohorts
+    prompts_by_id = {}
+    cohort_info = []  # Track (cohort_idx, expected_count) for validation
+
+    for cohort_idx, spec in enumerate(cohort_specs):
+        csv_path = _get_csv_path(spec.record_type)
+        stats = sample_patient_stats(csv_path, spec.count)
+
+        prompt = SAMPLE_TEMPLATE.render(
+            positive_cohort=spec.positive,
+            negative_cohort=spec.negative,
+            n=spec.count,
+            stats=stats,
         )
-        state.sampled_descriptions.append(sampled)
+
+        custom_id = f"cohort_{cohort_idx}_sampling"
+        prompts_by_id[custom_id] = prompt
+        cohort_info.append((cohort_idx, spec.count))
+
+        logger.info(f"Sampling prompt for cohort {cohort_idx}: {prompt[:100]}...")
+
+    # Submit batch sampling request
+    from .models import SamplingResponse
+
+    schema = SamplingResponse.model_json_schema()
+    batch_id = await batch_llm.ask(prompts_by_id, schema, sampler)
+    state.sampling_batch_id = batch_id
+    state.stage = "check_sampling"
+
+    return state
+
+
+async def _handle_check_sampling_stage(
+    batch_llm: BatchLLM,
+    state: State,
+    cohort_specs: List[CohortSpec],
+    sampler: str,
+    generator: str,
+    chroma_db,
+    embedder,
+    verifier: str,
+    logger: logging.Logger,
+) -> Union[List[Cohort], State]:
+    """Check if sampling batch is ready and parse results."""
+    if not state.sampling_batch_id:
+        raise ValueError("No sampling batch ID found in state")
+
+    batch_id = state.sampling_batch_id
+
+    try:
+        is_done = await batch_llm.is_done(batch_id)
+
+        if is_done:
+            # Get batch results
+            results = await batch_llm.get(batch_id)
+
+            # Parse and distribute results to cohorts
+            from .models import SamplingResponse
+
+            cohort_results: list[dict[int, PatientRecipe]] = []
+
+            for result in results:
+                if result.get("response", {}).get("status_code") == 200:
+                    custom_id = result["custom_id"]
+                    # Extract cohort index from custom_id like "cohort_0_sampling"
+                    cohort_idx = int(custom_id.split("_")[1])
+
+                    content = result["response"]["body"]["choices"][0]["message"][
+                        "content"
+                    ]
+                    logger.info(
+                        f"Sampling response for {custom_id}: {content[:100]}..."
+                    )
+                    sampling_response = SamplingResponse.model_validate_json(content)
+
+                    # Validate we got the expected number of recipes
+                    expected_count = cohort_specs[cohort_idx].count
+                    if len(sampling_response.root) < expected_count:
+                        raise ValueError(
+                            f"Cohort {cohort_idx}: Expected {expected_count} samples, got {len(sampling_response.root)}"
+                        )
+
+                    # Extend cohort_results to the right size if needed
+                    while len(cohort_results) <= cohort_idx:
+                        cohort_results.append({})
+
+                    cohort_results[cohort_idx] = sampling_response.root
+
+            # Check that all cohorts have results
+            if len(cohort_results) != len(cohort_specs):
+                raise ValueError(
+                    f"Expected {len(cohort_specs)} cohort results, got {len(cohort_results)}"
+                )
+
+            state.sampled_recipes = cohort_results
+            state.stage = "generation"
+            return await _handle_generation_stage(
+                batch_llm,
+                state,
+                cohort_specs,
+                generator,
+                chroma_db,
+                embedder,
+                verifier,
+                logger,
+            )
+
+        else:
+            # Still processing, return state to resume later
+            return state
+
+    except Exception as e:
+        raise RuntimeError(f"Failed to check batch sampling: {e}")
+        state.sampled_recipes.append(sampled)
 
     state.stage = "generation"
     return await _handle_generation_stage(
@@ -471,7 +644,7 @@ async def _handle_sampling_stage(
 
 
 async def _handle_generation_stage(
-    client: AsyncOpenAI,
+    batch_llm: BatchLLM,
     state: State,
     cohort_specs: List[CohortSpec],
     generator: str,
@@ -481,7 +654,7 @@ async def _handle_generation_stage(
     logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Handle the initial generation stage using batch API."""
-    if state.generation_tickets:
+    if state.generation_batch_id:
         # Already submitted generation requests, move to checking
         state.stage = "check_generation"
         return await _handle_check_generation_stage(
@@ -496,9 +669,9 @@ async def _handle_generation_stage(
         )
 
     # Prepare batch requests
-    batch_requests = []
+    prompts_by_id = {}
 
-    for cohort_idx, sampled in enumerate(state.sampled_descriptions):
+    for cohort_idx, sampled in enumerate(state.sampled_recipes):
         spec = cohort_specs[cohort_idx]
         recipes = list(sampled.values())
         patient_ids = list(sampled.keys())
@@ -517,38 +690,13 @@ async def _handle_generation_stage(
                 )
 
                 logger.info(f"Generation prompt for {custom_id}: {prompt}")
-                batch_requests.append(
-                    {
-                        "custom_id": custom_id,
-                        "method": "POST",
-                        "url": "/v1/chat/completions",
-                        "body": {
-                            "model": generator,
-                            "messages": [{"role": "user", "content": prompt}],
-                            "response_format": {
-                                "type": "json_schema",
-                                "json_schema": {
-                                    "name": "generation_response",
-                                    "strict": True,
-                                    "schema": GenerationResponse.model_json_schema(),
-                                },
-                            },
-                            "temperature": 0.7,
-                        },
-                    }
-                )
+                prompts_by_id[custom_id] = prompt
 
     # Submit batch request
     try:
-        batch_response = await client.batches.create(
-            input_file_id=await _create_jsonl_file(
-                client, batch_requests, generator, logger
-            ),
-            endpoint="/v1/chat/completions",
-            completion_window="24h",
-        )
-        state.generation_tickets.append(batch_response.id)
-        logger.info(f"Submitted generation batch with ID: {batch_response.id}")
+        schema = GenerationResponse.model_json_schema()
+        batch_id = await batch_llm.ask(prompts_by_id, schema, generator)
+        state.generation_batch_id = batch_id
         state.stage = "check_generation"
         return state
     except Exception as e:
@@ -556,7 +704,7 @@ async def _handle_generation_stage(
 
 
 async def _handle_check_generation_stage(
-    client: AsyncOpenAI,
+    batch_llm: BatchLLM,
     state: State,
     cohort_specs: List[CohortSpec],
     chroma_db,
@@ -566,33 +714,27 @@ async def _handle_check_generation_stage(
     logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Check if generation batch is ready and start verification if so."""
-    if not state.generation_tickets:
-        raise ValueError("No generation tickets found in state")
+    if not state.generation_batch_id:
+        raise ValueError("No generation batch ID found in state")
 
-    batch_id = state.generation_tickets[0]
+    batch_id = state.generation_batch_id
 
     try:
-        batch_status = await client.batches.retrieve(batch_id)
+        is_done = await batch_llm.is_done(batch_id)
 
-        if batch_status.status == "completed":
+        if is_done:
             # Download results
-            batch_output = (await client.batches.retrieve(batch_id)).output_file_id
-            results = await _download_batch_results(client, batch_output)
+            results = await batch_llm.get(batch_id)
 
             # Parse generation results
             state.generated_records = _parse_generation_results(
-                results, state.sampled_descriptions, logger
+                results, state.sampled_recipes, logger
             )
 
             # Move to matching stage
             state.stage = "matching"
             return await _handle_matching_stage(
                 client, state, chroma_db, embedder, cohort_specs, verifier, logger
-            )
-
-        elif batch_status.status in ["failed", "expired", "cancelled"]:
-            raise RuntimeError(
-                f"Batch generation failed with status: {batch_status.status}"
             )
 
         else:
@@ -604,7 +746,7 @@ async def _handle_check_generation_stage(
 
 
 async def _handle_matching_stage(
-    client: AsyncOpenAI,
+    batch_llm: BatchLLM,
     state: State,
     chroma_db,
     embedder,
@@ -618,18 +760,18 @@ async def _handle_matching_stage(
     # Apply code matching to all generated records
     state.coded_cohorts = []
     for cohort_idx, cohort_dict in enumerate(state.generated_records):
-        recipes = state.sampled_descriptions[cohort_idx]
+        recipes = state.sampled_recipes[cohort_idx]
         matched = await code_cohort(cohort_dict, recipes, chroma_client, embedder)
         state.coded_cohorts.append(matched)
 
     # Start verification stage
     return await _start_verification_stage(
-        client, state, cohort_specs, verifier, logger
+        batch_llm, state, cohort_specs, verifier, logger
     )
 
 
 async def _start_verification_stage(
-    client: AsyncOpenAI,
+    batch_llm: BatchLLM,
     state: State,
     cohort_specs: List[CohortSpec],
     verifier: str,
@@ -637,7 +779,7 @@ async def _start_verification_stage(
 ) -> Union[List[Cohort], State]:
     """Start verification stage using batch API."""
     # Prepare verification requests
-    batch_requests = []
+    prompts_by_id = {}
 
     for cohort_idx, cohort_records in enumerate(state.coded_cohorts):
         spec = cohort_specs[cohort_idx]
@@ -650,37 +792,13 @@ async def _start_verification_stage(
             custom_id = f"verify_cohort_{cohort_idx}_patient_{record_idx}_{salt}"
             logger.info(f"Verification prompt for {custom_id}: {prompt}")
 
-            batch_requests.append(
-                {
-                    "custom_id": custom_id,
-                    "method": "POST",
-                    "url": "/v1/chat/completions",
-                    "body": {
-                        "model": verifier,
-                        "messages": [{"role": "user", "content": prompt}],
-                        "response_format": {
-                            "type": "json_schema",
-                            "json_schema": {
-                                "name": "verification_response",
-                                "strict": True,
-                                "schema": VerificationResponse.model_json_schema(),
-                            },
-                        },
-                    },
-                }
-            )
+            prompts_by_id[custom_id] = prompt
 
     # Submit verification batch
     try:
-        batch_response = await client.batches.create(
-            input_file_id=await _create_jsonl_file(
-                client, batch_requests, verifier, logger
-            ),
-            endpoint="/v1/chat/completions",
-            completion_window="24h",
-        )
-        state.verification_tickets.append(batch_response.id)
-        logger.info(f"Submitted verification batch with ID: {batch_response.id}")
+        schema = VerificationResponse.model_json_schema()
+        batch_id = await batch_llm.ask(prompts_by_id, schema, verifier)
+        state.verification_batch_id = batch_id
         state.stage = "check_verification"
         return state
     except Exception as e:
@@ -688,25 +806,24 @@ async def _start_verification_stage(
 
 
 async def _handle_check_verification_stage(
-    client: AsyncOpenAI,
+    batch_llm: BatchLLM,
     state: State,
     cohort_specs: List[CohortSpec],
     verifier: str,
     logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Check if verification batch is ready."""
-    if not state.verification_tickets:
-        raise ValueError("No verification tickets found in state")
+    if not state.verification_batch_id:
+        raise ValueError("No verification batch ID found in state")
 
-    batch_id = state.verification_tickets[0]
+    batch_id = state.verification_batch_id
 
     try:
-        batch_status = await client.batches.retrieve(batch_id)
+        is_done = await batch_llm.is_done(batch_id)
 
-        if batch_status.status == "completed":
+        if is_done:
             # Download results
-            batch_output = (await client.batches.retrieve(batch_id)).output_file_id
-            results = await _download_batch_results(client, batch_output)
+            results = await batch_llm.get(batch_id)
 
             # Parse verification results
             state.verifications = _parse_verification_results(results, logger)
@@ -714,11 +831,6 @@ async def _handle_check_verification_stage(
             # Move to finalization
             state.stage = "finalize"
             return _handle_finalize_stage(state, cohort_specs)
-
-        elif batch_status.status in ["failed", "expired", "cancelled"]:
-            raise RuntimeError(
-                f"Batch verification failed with status: {batch_status.status}"
-            )
 
         else:
             # Still processing, return state to resume later
@@ -756,60 +868,13 @@ def _handle_finalize_stage(
     return final_results
 
 
-async def _create_jsonl_file(
-    client: AsyncOpenAI,
-    requests: List[Dict],
-    model: str,
-    logger: logging.Logger | None = None,
-) -> str:
-    """Create a JSONL file from batch requests and upload to OpenAI or Gemini."""
-    import tempfile
-    import os
-
-    jsonl_content = "\n".join(json.dumps(request, default=str) for request in requests)
-    if logger and logger.isEnabledFor(logging.DEBUG):
-        logger.debug(f"Batch JSONL content: {jsonl_content}")
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
-        f.write(jsonl_content + "\n")
-        temp_path = f.name
-
-    try:
-        if "gemini" in model.lower():
-            # TODO: Factor out genai configuration to avoid using OPENAI_API_KEY for Gemini
-            client_genai = genai.Client(api_key=os.getenv("OPENAI_API_KEY"))
-            file = client_genai.files.upload(
-                file=temp_path,
-                config=types.UploadFileConfig(mime_type="application/jsonl"),
-            )
-            return file.name
-        else:
-            with open(temp_path, "rb") as f:
-                file_response = await client.files.create(file=f, purpose="batch")
-            return file_response.id
-    finally:
-        os.unlink(temp_path)
-
-
-async def _download_batch_results(client: AsyncOpenAI, file_id: str) -> List[Dict]:
-    """Download and parse batch results from OpenAI."""
-    file_content = await client.files.content(file_id)
-    results = []
-
-    for line in file_content.text.split("\n"):
-        if line.strip():
-            results.append(json.loads(line))
-
-    return results
-
-
 def _parse_generation_results(
     results: List[Dict],
-    sampled_descriptions: List[Dict[int, PatientRecipe]],
+    sampled_recipes: List[Dict[int, PatientRecipe]],
     logger: logging.Logger,
 ) -> List[Dict[int, UncodedPatient]]:
     """Parse generation results and organize by cohort, combining segments."""
-    cohort_records = [{} for _ in sampled_descriptions]
+    cohort_records = [{} for _ in sampled_recipes]
     segment_data = {}  # (cohort_idx, patient_id) -> list of (seg_idx, records)
 
     for result in results:
