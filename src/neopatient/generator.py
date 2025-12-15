@@ -484,27 +484,23 @@ async def _handle_check_sampling_stage(
     results = await batch_llm.get(batch_id)
 
     cohort_results: dict[int, dict[int, PatientRecipe]] = {}
-    for result in results:
-        if result.get("response", {}).get("status_code") == 200:
-            custom_id = result["custom_id"]
-            # Extract cohort index from custom_id like "cohort_0_sampling"
-            cohort_idx = int(custom_id.split("_")[1])
+    for custom_id, content in results.items():
+        # Extract cohort index from custom_id like "cohort_0_sampling"
+        cohort_idx = int(custom_id.split("_")[1])
 
-            content = result["response"]["body"]["choices"][0]["message"]["content"]
-            logger.info(f"Sampling response for {custom_id}: {content[:100]}...")
-            sampling_response = SamplingResponse.model_validate_json(content)
+        sampling_response = SamplingResponse.model_validate_json(content)
 
-            # Validate we got the expected number of recipes
-            expected_count = cohort_specs[cohort_idx].count
-            if len(sampling_response.root) < expected_count:
-                raise ValueError(
-                    f"Cohort {cohort_idx}: Expected {expected_count} samples, got {len(sampling_response.root)}"
-                )
-
-            cohort_ids = random.sample(
-                range(100000000, 1000000000), len(sampling_response.root)
+        # Validate we got the expected number of recipes
+        expected_count = cohort_specs[cohort_idx].count
+        if len(sampling_response.root) < expected_count:
+            raise ValueError(
+                f"Cohort {cohort_idx}: Expected {expected_count} samples, got {len(sampling_response.root)}"
             )
-            cohort_results[cohort_idx] = dict(zip(cohort_ids, sampling_response.root))
+
+        cohort_ids = random.sample(
+            range(100000000, 1000000000), len(sampling_response.root)
+        )
+        cohort_results[cohort_idx] = dict(zip(cohort_ids, sampling_response.root))
 
     # Check that all cohorts have results
     if len(cohort_results) != len(cohort_specs):
@@ -703,7 +699,7 @@ def _handle_finalize_stage(
 
 
 def _parse_generation_results(
-    results: list[dict],
+    results: dict[str, str],
     sampled_recipes: list[dict[int, PatientRecipe]],
     logger: logging.Logger,
 ) -> list[dict[int, UncodedPatient]]:
@@ -711,22 +707,18 @@ def _parse_generation_results(
     cohort_records = [{} for _ in sampled_recipes]
     segment_data = {}  # (cohort_idx, patient_id) -> list of (seg_idx, records)
 
-    for result in results:
-        if result.get("response", {}).get("status_code") == 200:
-            custom_id = result["custom_id"]
-            parts = custom_id.split("_")
-            cohort_idx = int(parts[1])
-            patient_id = int(parts[3])
-            seg_idx = int(parts[5])  # segment_{seg_idx}
-            content = result["response"]["body"]["choices"][0]["message"]["content"]
-            logger.info(f"Generation response for {custom_id}: {content}")
-            flat_generation_response = GenerationResponse.model_validate_json(content)
-            key = (cohort_idx, patient_id)
-            if key not in segment_data:
-                segment_data[key] = []
-            segment_data[key].append(
-                (seg_idx, flat_generation_response.records.unflatten())
-            )
+    for custom_id, content in results.items():
+        parts = custom_id.split("_")
+        cohort_idx = int(parts[1])
+        patient_id = int(parts[3])
+        seg_idx = int(parts[5])  # segment_{seg_idx}
+        flat_generation_response = GenerationResponse.model_validate_json(content)
+        key = (cohort_idx, patient_id)
+        if key not in segment_data:
+            segment_data[key] = []
+        segment_data[key].append(
+            (seg_idx, flat_generation_response.records.unflatten())
+        )
 
     # Combine segments for each patient
     for (cohort_idx, patient_id), segments in segment_data.items():
@@ -739,27 +731,21 @@ def _parse_generation_results(
 
 
 def _parse_verification_results(
-    results: list[dict], logger: logging.Logger
+    results: dict[str, str], logger: logging.Logger
 ) -> list[list[VerificationResponse]]:
     """Parse verification results and organize by cohort."""
     # Determine number of cohorts from results
     cohort_indices = set()
-    for result in results:
-        if result.get("response", {}).get("status_code") == 200:
-            custom_id = result["custom_id"]
-            cohort_idx = int(custom_id.split("_")[2])
-            cohort_indices.add(cohort_idx)
+    for custom_id in results.keys():
+        cohort_idx = int(custom_id.split("_")[2])
+        cohort_indices.add(cohort_idx)
 
     max_cohort_idx = max(cohort_indices) if cohort_indices else 0
     cohort_verifications = [[] for _ in range(max_cohort_idx + 1)]
 
-    for result in results:
-        if result.get("response", {}).get("status_code") == 200:
-            custom_id = result["custom_id"]
-            cohort_idx = int(custom_id.split("_")[2])
-            content = result["response"]["body"]["choices"][0]["message"]["content"]
-            logger.info(f"Verification response for {custom_id}: {content}")
-            verification = VerificationResponse.model_validate_json(content)
-            cohort_verifications[cohort_idx].append(verification)
+    for custom_id, content in results.items():
+        cohort_idx = int(custom_id.split("_")[2])
+        verification = VerificationResponse.model_validate_json(content)
+        cohort_verifications[cohort_idx].append(verification)
 
     return cohort_verifications
