@@ -571,75 +571,56 @@ async def _handle_check_sampling_stage(
 
     batch_id = state.sampling_batch_id
 
-    try:
-        is_done = await batch_llm.is_done(batch_id)
+    is_done = await batch_llm.is_done(batch_id)
 
-        if is_done:
-            # Get batch results
-            results = await batch_llm.get(batch_id)
+    if not is_done:
+        # Still processing, return state to resume later
+        return state
 
-            # Parse and distribute results to cohorts
-            from .models import SamplingResponse
+    # Get batch results
+    results = await batch_llm.get(batch_id)
 
-            cohort_results: list[dict[int, PatientRecipe]] = []
+    # Parse and distribute results to cohorts
+    from .models import SamplingResponse
 
-            for result in results:
-                if result.get("response", {}).get("status_code") == 200:
-                    custom_id = result["custom_id"]
-                    # Extract cohort index from custom_id like "cohort_0_sampling"
-                    cohort_idx = int(custom_id.split("_")[1])
+    cohort_results: dict[int, dict[int, PatientRecipe]] = {}
 
-                    content = result["response"]["body"]["choices"][0]["message"][
-                        "content"
-                    ]
-                    logger.info(
-                        f"Sampling response for {custom_id}: {content[:100]}..."
-                    )
-                    sampling_response = SamplingResponse.model_validate_json(content)
+    for result in results:
+        if result.get("response", {}).get("status_code") == 200:
+            custom_id = result["custom_id"]
+            # Extract cohort index from custom_id like "cohort_0_sampling"
+            cohort_idx = int(custom_id.split("_")[1])
 
-                    # Validate we got the expected number of recipes
-                    expected_count = cohort_specs[cohort_idx].count
-                    if len(sampling_response.root) < expected_count:
-                        raise ValueError(
-                            f"Cohort {cohort_idx}: Expected {expected_count} samples, got {len(sampling_response.root)}"
-                        )
+            content = result["response"]["body"]["choices"][0]["message"]["content"]
+            logger.info(f"Sampling response for {custom_id}: {content[:100]}...")
+            sampling_response = SamplingResponse.model_validate_json(content)
 
-                    # Extend cohort_results to the right size if needed
-                    while len(cohort_results) <= cohort_idx:
-                        cohort_results.append({})
-
-                    cohort_results[cohort_idx] = sampling_response.root
-
-            # Check that all cohorts have results
-            if len(cohort_results) != len(cohort_specs):
+            # Validate we got the expected number of recipes
+            expected_count = cohort_specs[cohort_idx].count
+            if len(sampling_response.root) < expected_count:
                 raise ValueError(
-                    f"Expected {len(cohort_specs)} cohort results, got {len(cohort_results)}"
+                    f"Cohort {cohort_idx}: Expected {expected_count} samples, got {len(sampling_response.root)}"
                 )
 
-            state.sampled_recipes = cohort_results
-            state.stage = "generation"
-            return await _handle_generation_stage(
-                batch_llm,
-                state,
-                cohort_specs,
-                generator,
-                chroma_db,
-                embedder,
-                verifier,
-                logger,
-            )
+            cohort_results[cohort_idx] = sampling_response.root
 
-        else:
-            # Still processing, return state to resume later
-            return state
+    # Check that all cohorts have results
+    if len(cohort_results) != len(cohort_specs):
+        raise ValueError(
+            f"Expected {len(cohort_specs)} cohort results, got {len(cohort_results)}"
+        )
 
-    except Exception as e:
-        raise RuntimeError(f"Failed to check batch sampling: {e}")
-        state.sampled_recipes.append(sampled)
-
+    state.sampled_recipes = [cohort_results[i] for i in range(len(cohort_specs))]
     state.stage = "generation"
     return await _handle_generation_stage(
-        client, state, cohort_specs, generator, chroma_db, embedder, verifier, logger
+        batch_llm,
+        state,
+        cohort_specs,
+        generator,
+        chroma_db,
+        embedder,
+        verifier,
+        logger,
     )
 
 
@@ -719,30 +700,25 @@ async def _handle_check_generation_stage(
 
     batch_id = state.generation_batch_id
 
-    try:
-        is_done = await batch_llm.is_done(batch_id)
+    is_done = await batch_llm.is_done(batch_id)
 
-        if is_done:
-            # Download results
-            results = await batch_llm.get(batch_id)
+    if not is_done:
+        # Still processing, return state to resume later
+        return state
 
-            # Parse generation results
-            state.generated_records = _parse_generation_results(
-                results, state.sampled_recipes, logger
-            )
+    # Download results
+    results = await batch_llm.get(batch_id)
 
-            # Move to matching stage
-            state.stage = "matching"
-            return await _handle_matching_stage(
-                client, state, chroma_db, embedder, cohort_specs, verifier, logger
-            )
+    # Parse generation results
+    state.generated_records = _parse_generation_results(
+        results, state.sampled_recipes, logger
+    )
 
-        else:
-            # Still processing, return state to resume later
-            return state
-
-    except Exception as e:
-        raise RuntimeError(f"Failed to check generation batch status: {e}")
+    # Move to matching stage
+    state.stage = "matching"
+    return await _handle_matching_stage(
+        batch_llm, state, chroma_db, embedder, cohort_specs, verifier, logger
+    )
 
 
 async def _handle_matching_stage(
@@ -818,26 +794,21 @@ async def _handle_check_verification_stage(
 
     batch_id = state.verification_batch_id
 
-    try:
-        is_done = await batch_llm.is_done(batch_id)
+    is_done = await batch_llm.is_done(batch_id)
 
-        if is_done:
-            # Download results
-            results = await batch_llm.get(batch_id)
+    if not is_done:
+        # Still processing, return state to resume later
+        return state
 
-            # Parse verification results
-            state.verifications = _parse_verification_results(results, logger)
+    # Download results
+    results = await batch_llm.get(batch_id)
 
-            # Move to finalization
-            state.stage = "finalize"
-            return _handle_finalize_stage(state, cohort_specs)
+    # Parse verification results
+    state.verifications = _parse_verification_results(results, logger)
 
-        else:
-            # Still processing, return state to resume later
-            return state
-
-    except Exception as e:
-        raise RuntimeError(f"Failed to check verification batch status: {e}")
+    # Move to finalization
+    state.stage = "finalize"
+    return _handle_finalize_stage(state, cohort_specs)
 
 
 def _handle_finalize_stage(
