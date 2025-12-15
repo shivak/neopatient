@@ -37,21 +37,6 @@ from .sampler import (
 from .batch_llm import create_batch_llm, BatchLLM
 
 
-def fill_embedder_defaults(
-    embedder_model: str | None,
-    embedder_batch_size: int | None,
-    embedder_args: dict | None,
-    embedder_base_url: str | None,
-) -> tuple[str, int, dict, str | None]:
-    """Fill in default values for embedder parameters if they are None."""
-    return (
-        embedder_model if embedder_model is not None else "Qwen/Qwen3-Embedding-8B",
-        embedder_batch_size if embedder_batch_size is not None else 128,
-        embedder_args if embedder_args is not None else {},
-        embedder_base_url,
-    )
-
-
 # Load Jinja2 template from file
 def load_template(template_path: str) -> jinja2.Template:
     """Load a Jinja2 template from a file path."""
@@ -174,11 +159,6 @@ async def synthesize_patient(
     """
     logger = logging.getLogger(__name__)
     chroma_client = resolve_chroma_client(chroma_db)
-    embedder_model, embedder_batch_size, embedder_args, embedder_base_url = (
-        fill_embedder_defaults(
-            embedder_model, embedder_batch_size, embedder_args, embedder_base_url
-        )
-    )
     embedder = create_embedder(
         embedder_model, embedder_batch_size, embedder_args, embedder_base_url
     )
@@ -297,11 +277,6 @@ async def synthesize_cohorts(
         - State dictionary for resuming if batch is not ready yet
     """
     chroma_db = resolve_chroma_client(chroma_db)
-    embedder_model, embedder_batch_size, embedder_args, embedder_base_url = (
-        fill_embedder_defaults(
-            embedder_model, embedder_batch_size, embedder_args, embedder_base_url
-        )
-    )
     embedder = create_embedder(
         embedder_model, embedder_batch_size, embedder_args, embedder_base_url
     )

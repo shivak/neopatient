@@ -71,28 +71,39 @@ def openai_embedder(
 
 
 def create_embedder(
-    embedder_model: str,
-    batch_size: int,
-    embedder_args: dict,
+    embedder_model: str | None = None,
+    embedder_batch_size: int | None = None,
+    embedder_args: dict | None = None,
     embedder_base_url: str | None = None,
 ) -> Embed:
     """Create an embedder from model name and args dict.
 
     Args:
-        embedder_model: Model name
-        batch_size: Batch size for embedding operations
-        embedder_args: Dictionary of embedder arguments
+        embedder_model: Model name (default: "Qwen/Qwen3-Embedding-8B")
+        embedder_batch_size: Batch size for embedding operations (default: 128)
+        embedder_args: Dictionary of embedder arguments (default: {})
         embedder_base_url: Base URL for OpenAI-compatible API (uses OpenAI embedder if provided)
 
     Returns:
         Embedder function
     """
+    # Apply defaults
+    embedder_model = (
+        embedder_model if embedder_model is not None else "Qwen/Qwen3-Embedding-8B"
+    )
+    embedder_batch_size = (
+        embedder_batch_size if embedder_batch_size is not None else 128
+    )
+    embedder_args = embedder_args if embedder_args is not None else {}
+
     if embedder_base_url is not None:
         return openai_embedder(
             embedder_model,
-            batch_size=batch_size,
+            batch_size=embedder_batch_size,
             embedder_base_url=embedder_base_url,
             **embedder_args,
         )
     else:
-        return sentence_embedder(embedder_model, batch_size=batch_size, **embedder_args)
+        return sentence_embedder(
+            embedder_model, batch_size=embedder_batch_size, **embedder_args
+        )
