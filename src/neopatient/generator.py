@@ -183,51 +183,47 @@ async def synthesize_patient(
         embedder_model, embedder_batch_size, embedder_args, embedder_base_url
     )
 
-    print(f"Generating record using: {generator}")
 
+    # Sample recipe
     sampled = await sample_recipes(
         client, positive, negative, 1, record_type, sampler, logger
     )
     recipe = next(iter(sampled.values()))
 
-    # Step 1: Generate tuples with LLM for each segment
+    # Generate each segment and then concatenate into uncoded record
     prompts = create_generation_prompts(record_type, {patient_id: recipe})
-    segment_prompts = {}
-    for pid, prompt in prompts:
-        segment_prompts.setdefault(pid, []).append(prompt)
+    segment_prompts = [prompt for pid, prompt in prompts]
 
     combined_records = {}
-    for pid, prompt_list in segment_prompts.items():
-        for seg_idx, prompt in enumerate(prompt_list):
-            logger.info(f"Generation prompt for segment {seg_idx}: {prompt}")
-            response = await client.chat.completions.create(
-                model=generator,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "generation_response",
-                        "strict": True,
-                        "schema": GenerationResponse.model_json_schema(),
-                    },
+    for seg_idx, prompt in enumerate(segment_prompts):
+        logger.info(f"Generation prompt for segment {seg_idx}: {prompt}")
+        response = await client.chat.completions.create(
+            model=generator,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "generation_response",
+                    "strict": True,
+                    "schema": GenerationResponse.model_json_schema(),
                 },
-                #        seed=seed,
-                temperature=0.7,
-            )
-            content = response.choices[0].message.content
-            logger.info(f"Generation response for segment {seg_idx}: {content}")
-            flat_generation_response = GenerationResponse.model_validate_json(content)
-            segment_records = flat_generation_response.records.unflatten()
-            # Combine records, assuming no overlapping times
-            combined_records.update(segment_records.root)
+            },
+            temperature=0.7,
+        )
+        content = response.choices[0].message.content
+        logger.info(f"Generation response for segment {seg_idx}: {content}")
+        flat_generation_response = GenerationResponse.model_validate_json(content)
+        segment_records = flat_generation_response.records.unflatten()
+        # Combine records, assuming no overlapping times
+        combined_records.update(segment_records.root)
     record_data = UncodedPatient(combined_records)
 
-    # Step 2: Match codes and create Patient
+    # Match codes and create Patient
     record = await code_patient(
         record_data, recipe, patient_id, chroma_client, embedder
     )
 
-    # Step 3: Verify the record satisfies cohort-level positive and negative descriptions (cohort-level, but description includes negatives)
+    # Verify the record satisfies positive and negative descriptions
     ver_prompt = create_verification_prompt(record, positive, negative)
     logger.info(f"Verification prompt: {ver_prompt}")
     ver_response = await client.chat.completions.create(
@@ -241,7 +237,6 @@ async def synthesize_patient(
                 "schema": VerificationResponse.model_json_schema(),
             },
         },
-        #        seed=seed,
         temperature=0.0,
     )
     ver_content = ver_response.choices[0].message.content
