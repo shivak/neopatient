@@ -255,7 +255,7 @@ class PatientRecipe(BaseModel):
         return total_codes / total_times
 
 
-class SamplingResponse(RootModel[Dict[int, PatientRecipe]]):
+class SamplingResponse(RootModel[List[PatientRecipe]]):
     """Response from sampling LLM with patient recipes."""
 
     pass

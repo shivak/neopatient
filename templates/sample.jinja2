@@ -6,8 +6,6 @@ These patient recipes should NOT satisfy the following (negative) description: "
 * Each overall description should be self-contained. If any details need to be kept consistent over all of the segments, specifically mention them there. (For example, medication, dosages, or other regimens that have to stay constant).
 * Each segment should have start and end dates, number of distinct timestamps, average number of codes per timestamp, and description of what occurred during that time period. Segments should be up to up to 300 events (num_times * avg_codes_per_time). Make sure to heed the positive/negative descriptions when choosing the dates and the implied time periods between events.
 * To make the recipes natural and realistic, include "irrelevant" aspects of their patient journey which are not in the positive description, but still do NOT trigger the negative description. Be careful about avoiding the negative description.
-* Assign unique patient IDs. By default, these should be random-looking (not sequential) but heed the positive description about what the IDs should be.
-* Output as JSON object: {(patient id): PatientRecipe}, ...}
 
 Use the advisory examples of stats from similar records:
 {% for stat in stats %} - total_codes: {{ stat.total_codes }}, unique_codes: {{ stat.unique_codes }}, duration: {{ stat.duration }}, num_times: {{ stat.num_times }}, avg_codes_per_time: {{ stat.avg_codes_per_time }} 
@@ -15,8 +13,8 @@ Use the advisory examples of stats from similar records:
 
 --- example output ---
 
-{
-  532114084: {
+[
+  {
     "birthday": "1975-01-01T00:00:00",
     "description": "A 45-year-old female with hypertension but not diabetes, Caucasian, outpatient visits every 6 months.",
     "gender": "Female",
@@ -39,7 +37,7 @@ Use the advisory examples of stats from similar records:
       }
     ]
   },
-  381018197: {
+  {
     "birthday": "1990-01-01T00:00:00",
     "description": "A 30-year-old male with asthma but not allergies, African American, emergency visits annually.",
     "gender": "Male",
@@ -55,4 +53,4 @@ Use the advisory examples of stats from similar records:
       }
     ]
   }
-}
+]

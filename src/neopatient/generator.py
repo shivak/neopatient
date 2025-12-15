@@ -187,7 +187,7 @@ async def synthesize_patient(
     sampled = await sample_recipes(
         client, positive, negative, 1, record_type, sampler, logger
     )
-    recipe = next(iter(sampled.values()))
+    recipe = sampled[0]
 
     # Generate each segment and then concatenate into uncoded record
     prompts = create_generation_prompts(record_type, {patient_id: recipe})
@@ -532,7 +532,10 @@ async def _handle_check_sampling_stage(
                     f"Cohort {cohort_idx}: Expected {expected_count} samples, got {len(sampling_response.root)}"
                 )
 
-            cohort_results[cohort_idx] = sampling_response.root
+            cohort_ids = random.sample(
+                range(100000000, 1000000000), len(sampling_response.root)
+            )
+            cohort_results[cohort_idx] = dict(zip(cohort_ids, sampling_response.root))
 
     # Check that all cohorts have results
     if len(cohort_results) != len(cohort_specs):

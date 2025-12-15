@@ -37,7 +37,7 @@ async def sample_recipes(
     record_type: RecordType,
     sampler_model: str = "gpt-5",
     logger: Optional[logging.Logger] = None,
-) -> Dict[int, PatientRecipe]:
+) -> List[PatientRecipe]:
     """
     Samples individual patient recipes that satisfy cohort criteria.
 
@@ -54,7 +54,7 @@ async def sample_recipes(
         logger: Optional logger for logging the LLM response
 
     Returns:
-        Dict of {patient_id: PatientRecipe}
+        List of PatientRecipe objects
     """
 
     csv_path = _get_csv_path(record_type)
