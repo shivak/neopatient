@@ -630,20 +630,6 @@ async def _handle_generation_stage(
     logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Handle the initial generation stage using batch API."""
-    if state.generation_batch_id:
-        # Already submitted generation requests, move to checking
-        state.stage = "check_generation"
-        return await _handle_check_generation_stage(
-            client,
-            state,
-            cohort_specs,
-            chroma_db,
-            generator,
-            embedder,
-            verifier,
-            logger,
-        )
-
     # Prepare batch requests
     prompts_by_id = {}
 
@@ -696,20 +682,14 @@ async def _handle_check_generation_stage(
     batch_id = state.generation_batch_id
 
     is_done = await batch_llm.is_done(batch_id)
-
     if not is_done:
-        # Still processing, return state to resume later
         return state
 
-    # Download results
     results = await batch_llm.get(batch_id)
-
-    # Parse generation results
     state.generated_records = _parse_generation_results(
         results, state.sampled_recipes, logger
     )
 
-    # Move to matching stage
     state.stage = "matching"
     return await _handle_matching_stage(
         batch_llm, state, chroma_db, embedder, cohort_specs, verifier, logger
@@ -788,20 +768,13 @@ async def _handle_check_verification_stage(
         raise ValueError("No verification batch ID found in state")
 
     batch_id = state.verification_batch_id
-
     is_done = await batch_llm.is_done(batch_id)
-
     if not is_done:
-        # Still processing, return state to resume later
         return state
 
-    # Download results
     results = await batch_llm.get(batch_id)
-
-    # Parse verification results
     state.verifications = _parse_verification_results(results, logger)
 
-    # Move to finalization
     state.stage = "finalize"
     return _handle_finalize_stage(state, cohort_specs)
 
