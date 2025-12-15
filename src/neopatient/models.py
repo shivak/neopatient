@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Dict, Union, Annotated
+from typing import Annotated
 from enum import Enum
 from datetime import datetime
 from pydantic import (
@@ -37,7 +37,7 @@ class CodeSystem(str, Enum):
     # UMLS_CUI = "umls_cui"
 
     @staticmethod
-    def allowed_in(record_type: "RecordType") -> List["CodeSystem"]:
+    def allowed_in(record_type: "RecordType") -> list["CodeSystem"]:
         """Return list of allowed code systems for the given record type."""
         if record_type == RecordType.CLAIMS:
             return [
@@ -104,7 +104,7 @@ class Event(BaseModel):
     unit: str | None = Field(description="unit for the numeric_value if applicable")
 
 
-class UncodedPatient(RootModel[Dict[str, List[Event]]]):
+class UncodedPatient(RootModel[dict[str, list[Event]]]):
     """Ordered dictionary of times (strings, '' for static) to lists of events."""
 
     pass
@@ -112,10 +112,10 @@ class UncodedPatient(RootModel[Dict[str, List[Event]]]):
 
 # FlatEvent is a union to represent events without nulls: 2-tuple for non-numeric events,
 # 4-tuple for numeric events (ensuring unit is always present with numeric_value).
-FlatEvent = Union[tuple[CodeSystem, str], tuple[CodeSystem, str, float, str]]
+FlatEvent = tuple[CodeSystem, str] | tuple[CodeSystem, str, float, str]
 
 
-class FlatUncodedPatient(RootModel[Dict[str, List[FlatEvent]]]):
+class FlatUncodedPatient(RootModel[dict[str, list[FlatEvent]]]):
     """Flat representation of uncoded patient records (events as tuples)."""
 
     def unflatten(self) -> UncodedPatient:
@@ -217,7 +217,7 @@ class PatientRecipe(BaseModel):
     gender: str | None = None
     race: str | None = None
     ethnicity: str | None = None
-    segments: List[Segment]
+    segments: list[Segment]
 
     @computed_field
     def start_date(self) -> datetime:
@@ -255,7 +255,7 @@ class PatientRecipe(BaseModel):
         return total_codes / total_times
 
 
-class SamplingResponse(RootModel[List[PatientRecipe]]):
+class SamplingResponse(RootModel[list[PatientRecipe]]):
     """Response from sampling LLM with patient recipes."""
 
     pass

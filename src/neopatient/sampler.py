@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Dict, List, Any, Optional
+from typing import Any, Optional
 from openai import AsyncOpenAI
 import jinja2
 import pandas as pd
@@ -23,7 +23,7 @@ def _get_csv_path(record_type: RecordType) -> str:
         return os.path.join(_project_root, "stats", "ehr-outpatient.csv")
 
 
-def sample_patient_stats(csv_path: str, n: int) -> List[Dict[str, Any]]:
+def sample_patient_stats(csv_path: str, n: int) -> list[dict[str, Any]]:
     df = pd.read_csv(csv_path)
     sampled_df = df.sample(n=n, replace=True)
     return sampled_df.to_dict("records")
@@ -37,7 +37,7 @@ async def sample_recipes(
     record_type: RecordType,
     sampler_model: str = "gpt-5",
     logger: Optional[logging.Logger] = None,
-) -> List[PatientRecipe]:
+) -> list[PatientRecipe]:
     """
     Samples individual patient recipes that satisfy cohort criteria.
 

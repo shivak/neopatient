@@ -3,7 +3,7 @@ import chromadb
 from chromadb.api import ClientAPI
 from chromadb.config import Settings
 
-from typing import Union
+
 import pathlib
 from huggingface_hub import snapshot_download
 from .models import CodeSystem
@@ -93,13 +93,17 @@ def load_chroma_client(
 
 
 def resolve_chroma_client(
-    chroma_db: Union[ClientAPI, pathlib.Path, None],
+    chroma_db: ClientAPI | pathlib.Path | None,
 ) -> ClientAPI:
     """Resolve chroma_db parameter to a ChromaDB client."""
 
     if chroma_db is None:
         # Download pre-generated ChromaDB files from Hugging Face
-        chroma_path = snapshot_download("CAB-Harvard/neopatient-Qwen3-Embedding-8B", repo_type="dataset", revision="3eca3e5c188cd5a4ea54811a9271798262f2b101")
+        chroma_path = snapshot_download(
+            "CAB-Harvard/neopatient-Qwen3-Embedding-8B",
+            repo_type="dataset",
+            revision="3eca3e5c188cd5a4ea54811a9271798262f2b101",
+        )
         return load_chroma_client(chroma_path)
     elif isinstance(chroma_db, pathlib.Path):
         return load_chroma_client(str(chroma_db))

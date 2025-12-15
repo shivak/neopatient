@@ -1,9 +1,9 @@
-from typing import AsyncGenerator, Callable, List
+from typing import AsyncGenerator, Callable
 from sentence_transformers import SentenceTransformer
 from openai import AsyncOpenAI
 
 # Type alias for an embedder function
-Embed = Callable[[List[str]], AsyncGenerator[List[List[float]], None]]
+Embed = Callable[[list[str]], AsyncGenerator[list[list[float]], None]]
 
 
 def sentence_embedder(model_name: str, batch_size: int, **kwargs) -> Embed:
@@ -21,7 +21,7 @@ def sentence_embedder(model_name: str, batch_size: int, **kwargs) -> Embed:
     kwargs["tokenizer_kwargs"]["padding_side"] = "left"
     model = SentenceTransformer(model_name, **kwargs)
 
-    async def embed(texts: List[str]) -> AsyncGenerator[List[List[float]], None]:
+    async def embed(texts: list[str]) -> AsyncGenerator[list[list[float]], None]:
         # Truncate texts to 256 characters
         truncated_texts = [text[:256] for text in texts]
 
@@ -51,7 +51,7 @@ def openai_embedder(
     """
     client = AsyncOpenAI(base_url=embedder_base_url, max_retries=0)
 
-    async def embed(texts: List[str]) -> AsyncGenerator[List[List[float]], None]:
+    async def embed(texts: list[str]) -> AsyncGenerator[list[list[float]], None]:
         # Truncate texts to 256 characters
         truncated_texts = [text[:256] for text in texts]
 

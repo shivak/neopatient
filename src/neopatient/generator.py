@@ -5,7 +5,7 @@ import random
 import string
 import sys
 import time
-from typing import Dict, List, Union, Tuple
+
 import pathlib
 from openai import AsyncOpenAI
 import jinja2
@@ -73,8 +73,8 @@ def _generate_salt() -> str:
 
 
 def create_generation_prompts(
-    record_type: RecordType, recipes: Dict[int, PatientRecipe]
-) -> List[Tuple[int, str]]:
+    record_type: RecordType, recipes: dict[int, PatientRecipe]
+) -> list[tuple[int, str]]:
     """Create generation prompts from PatientRecipe objects, one per segment.
 
     Args:
@@ -117,7 +117,7 @@ async def synthesize_patient(
     positive: str,
     negative: str,
     patient_id: int,
-    chroma_db: Union[ClientAPI, pathlib.Path, None],
+    chroma_db: ClientAPI | pathlib.Path | None,
     embedder_model: str | None,
     embedder_batch_size: int | None,
     embedder_args: dict | None,
@@ -230,8 +230,8 @@ async def synthesize_patient(
 
 
 async def synthesize_cohorts(
-    cohort_specs: List[CohortSpec],
-    chroma_db: Union[ClientAPI, pathlib.Path, None],
+    cohort_specs: list[CohortSpec],
+    chroma_db: ClientAPI | pathlib.Path | None,
     embedder_model: str | None,
     embedder_batch_size: int | None,
     embedder_args: dict | None,
@@ -241,7 +241,7 @@ async def synthesize_cohorts(
     generator: str = "gpt-5",
     verifier: str = "gpt-5-nano",
     sampler: str = "gpt-5",
-) -> Union[List[Cohort], State]:
+) -> list[Cohort] | State:
     logger = logging.getLogger(__name__)
 
     # Create batch LLM instance
@@ -360,8 +360,8 @@ async def synthesize_cohorts(
 
 
 async def synthesize_cohorts_with_state_file(
-    cohort_specs: List[CohortSpec],
-    chroma_db: Union[ClientAPI, pathlib.Path, None],
+    cohort_specs: list[CohortSpec],
+    chroma_db: ClientAPI | pathlib.Path | None,
     embedder_model: str | None,
     embedder_batch_size: int | None,
     embedder_args: dict | None,
@@ -369,9 +369,9 @@ async def synthesize_cohorts_with_state_file(
     generator: str = "gpt-5-nano",
     verifier: str = "gpt-5",
     sampler: str = "gpt-5",
-    state_file: Union[str, pathlib.Path, None] = None,
+    state_file: str | pathlib.Path | None = None,
     poll_interval: int = 15 * 60,
-) -> List[Cohort]:
+) -> list[Cohort]:
     """
     Generates synthetic patient cohorts with state file management and polling.
 
@@ -422,14 +422,14 @@ async def synthesize_cohorts_with_state_file(
 async def _handle_sampling_stage(
     batch_llm: BatchLLM,
     state: State,
-    cohort_specs: List[CohortSpec],
+    cohort_specs: list[CohortSpec],
     sampler: str,
     generator: str,
     chroma_db,
     embedder,
     verifier: str,
     logger: logging.Logger,
-) -> Union[List[Cohort], State]:
+) -> list[Cohort] | State:
     """Sample individual patient recipes for each cohort using batch processing."""
     if state.sampled_recipes:
         # Already sampled, move to generation
@@ -471,14 +471,14 @@ async def _handle_sampling_stage(
 async def _handle_check_sampling_stage(
     batch_llm: BatchLLM,
     state: State,
-    cohort_specs: List[CohortSpec],
+    cohort_specs: list[CohortSpec],
     sampler: str,
     generator: str,
     chroma_db,
     embedder,
     verifier: str,
     logger: logging.Logger,
-) -> Union[List[Cohort], State]:
+) -> list[Cohort] | State:
     """Check if sampling batch is ready and parse results."""
     if not state.sampling_batch_id:
         raise ValueError("No sampling batch ID found in state")
@@ -526,13 +526,13 @@ async def _handle_check_sampling_stage(
 async def _handle_generation_stage(
     batch_llm: BatchLLM,
     state: State,
-    cohort_specs: List[CohortSpec],
+    cohort_specs: list[CohortSpec],
     generator: str,
     chroma_db,
     embedder,
     verifier: str,
     logger: logging.Logger,
-) -> Union[List[Cohort], State]:
+) -> list[Cohort] | State:
     """Handle the initial generation stage using batch API."""
     # Prepare batch requests
     prompts_by_id = {}
@@ -572,13 +572,13 @@ async def _handle_generation_stage(
 async def _handle_check_generation_stage(
     batch_llm: BatchLLM,
     state: State,
-    cohort_specs: List[CohortSpec],
+    cohort_specs: list[CohortSpec],
     chroma_db,
     generator: str,
     embedder,
     verifier: str,
     logger: logging.Logger,
-) -> Union[List[Cohort], State]:
+) -> list[Cohort] | State:
     """Check if generation batch is ready and start verification if so."""
     if not state.generation_batch_id:
         raise ValueError("No generation batch ID found in state")
@@ -606,7 +606,7 @@ async def _handle_matching_stage(
     cohort_specs,
     verifier,
     logger: logging.Logger,
-) -> Union[List[Cohort], State]:
+) -> list[Cohort] | State:
     """Handle code matching stage and start verification."""
     chroma_client = resolve_chroma_client(chroma_db)
 
@@ -625,10 +625,10 @@ async def _handle_matching_stage(
 async def _start_verification_stage(
     batch_llm: BatchLLM,
     state: State,
-    cohort_specs: List[CohortSpec],
+    cohort_specs: list[CohortSpec],
     verifier: str,
     logger: logging.Logger,
-) -> Union[List[Cohort], State]:
+) -> list[Cohort] | State:
     """Start verification stage using batch API."""
     # Prepare verification requests
     prompts_by_id = {}
@@ -660,10 +660,10 @@ async def _start_verification_stage(
 async def _handle_check_verification_stage(
     batch_llm: BatchLLM,
     state: State,
-    cohort_specs: List[CohortSpec],
+    cohort_specs: list[CohortSpec],
     verifier: str,
     logger: logging.Logger,
-) -> Union[List[Cohort], State]:
+) -> list[Cohort] | State:
     """Check if verification batch is ready."""
     if not state.verification_batch_id:
         raise ValueError("No verification batch ID found in state")
@@ -681,8 +681,8 @@ async def _handle_check_verification_stage(
 
 
 def _handle_finalize_stage(
-    state: State, cohort_specs: List[CohortSpec]
-) -> List[Cohort]:
+    state: State, cohort_specs: list[CohortSpec]
+) -> list[Cohort]:
     """Finalize results by filtering satisfactory records."""
     final_results = []
 
@@ -709,10 +709,10 @@ def _handle_finalize_stage(
 
 
 def _parse_generation_results(
-    results: List[Dict],
-    sampled_recipes: List[Dict[int, PatientRecipe]],
+    results: list[dict],
+    sampled_recipes: list[dict[int, PatientRecipe]],
     logger: logging.Logger,
-) -> List[Dict[int, UncodedPatient]]:
+) -> list[dict[int, UncodedPatient]]:
     """Parse generation results and organize by cohort, combining segments."""
     cohort_records = [{} for _ in sampled_recipes]
     segment_data = {}  # (cohort_idx, patient_id) -> list of (seg_idx, records)
@@ -745,8 +745,8 @@ def _parse_generation_results(
 
 
 def _parse_verification_results(
-    results: List[Dict], logger: logging.Logger
-) -> List[List[VerificationResponse]]:
+    results: list[dict], logger: logging.Logger
+) -> list[list[VerificationResponse]]:
     """Parse verification results and organize by cohort."""
     # Determine number of cohorts from results
     cohort_indices = set()

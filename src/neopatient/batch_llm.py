@@ -4,7 +4,7 @@ import json
 import os
 import tempfile
 from abc import ABC, abstractmethod
-from typing import Dict, List
+
 
 from openai import AsyncOpenAI
 from google import genai
@@ -15,7 +15,7 @@ class BatchLLM(ABC):
 
     @abstractmethod
     async def ask(
-        self, prompts_by_id: Dict[str, str], response_schema: dict, model: str
+        self, prompts_by_id: dict[str, str], response_schema: dict, model: str
     ) -> str:
         """Submit batch requests and return batch ID."""
         pass
@@ -26,7 +26,7 @@ class BatchLLM(ABC):
         pass
 
     @abstractmethod
-    async def get(self, batch_id: str) -> List[Dict]:
+    async def get(self, batch_id: str) -> list[dict]:
         """Retrieve completed batch results."""
         pass
 
@@ -38,7 +38,7 @@ class BatchOpenAI(BatchLLM):
         self.client = AsyncOpenAI()
 
     async def _create_jsonl_file(
-        self, prompts_by_id: Dict[str, str], response_schema: dict, model: str
+        self, prompts_by_id: dict[str, str], response_schema: dict, model: str
     ) -> str:
         """Create JSONL file for OpenAI batch API."""
         requests = []
@@ -78,7 +78,7 @@ class BatchOpenAI(BatchLLM):
         finally:
             os.unlink(temp_path)
 
-    async def _download_batch_results(self, file_id: str) -> List[Dict]:
+    async def _download_batch_results(self, file_id: str) -> list[dict]:
         """Download and parse batch results from OpenAI."""
         file_content = await self.client.files.content(file_id)
         results = []
@@ -90,7 +90,7 @@ class BatchOpenAI(BatchLLM):
         return results
 
     async def ask(
-        self, prompts_by_id: Dict[str, str], response_schema: dict, model: str
+        self, prompts_by_id: dict[str, str], response_schema: dict, model: str
     ) -> str:
         """Submit OpenAI batch requests."""
         input_file_id = await self._create_jsonl_file(
@@ -118,7 +118,7 @@ class BatchOpenAI(BatchLLM):
             # Still processing (running, validating, etc.)
             return False
 
-    async def get(self, batch_id: str) -> List[Dict]:
+    async def get(self, batch_id: str) -> list[dict]:
         """Retrieve OpenAI batch results."""
         batch_info = await self.client.batches.retrieve(batch_id)
         if not hasattr(batch_info, "output_file_id") or not batch_info.output_file_id:
@@ -135,7 +135,7 @@ class BatchGemini(BatchLLM):
         self._batch_id_to_custom_ids = {}  # batch_id -> list of custom_ids
 
     async def ask(
-        self, prompts_by_id: Dict[str, str], response_schema: dict, model: str
+        self, prompts_by_id: dict[str, str], response_schema: dict, model: str
     ) -> str:
         """Submit Gemini batch requests."""
         gemini_requests = []
@@ -175,7 +175,7 @@ class BatchGemini(BatchLLM):
             # Still processing (JOB_STATE_RUNNING, JOB_STATE_PENDING, etc.)
             return False
 
-    async def get(self, batch_id: str) -> List[Dict]:
+    async def get(self, batch_id: str) -> list[dict]:
         """Retrieve Gemini batch results."""
         batch_job = await self.client.batches.get(name=batch_id)
 

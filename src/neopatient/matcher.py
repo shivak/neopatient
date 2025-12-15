@@ -1,5 +1,5 @@
 from chromadb.api import ClientAPI
-from typing import List, Tuple, Dict
+
 from .models import CodeSystem, UncodedPatient, Patient, Cohort, PatientRecipe
 from .embed import Embed
 import pyarrow as pa
@@ -17,7 +17,7 @@ def _convert_time(time_str: str) -> datetime.datetime:
 def query_with_instructions(code_desc: str, code_system: CodeSystem) -> str:
     if code_system == CodeSystem.LOINC:
         instruct = "find the closest medical code description. Focus on the medical observation, measurement or order. Be cognizant of the fact that some medical terminology may be abbreviated or unfamiliar to you."
-    else: 
+    else:
         instruct = "find the closest medical code description. Focus on the medical concept, diagnosis, process, severity, and/or other medical particulars. Be cognizant of the fact that some medical terminology may be unfamiliar to you."
     return f"Instruct: {instruct}\nQuery:{code_desc}"
 
@@ -63,10 +63,10 @@ async def match_codes_in_system(
 
 
 async def match_codes(
-    queries: List[Tuple[CodeSystem, str]],
+    queries: list[tuple[CodeSystem, str]],
     chroma_client: ClientAPI,
     embedder: Embed,
-) -> List[Tuple[CodeSystem, str, str]]:
+) -> list[tuple[CodeSystem, str, str]]:
     """
     Find the best matching medical codes and descriptions for multiple (coding_system, description) pairs.
     Groups queries by coding system for optimal batch processing.
@@ -82,7 +82,7 @@ async def match_codes(
         return []
 
     # Group queries by coding system
-    system_groups: Dict[CodeSystem, List[Tuple[int, str]]] = {}
+    system_groups: dict[CodeSystem, list[tuple[int, str]]] = {}
     for i, (system, desc) in enumerate(queries):
         if system not in system_groups:
             system_groups[system] = []
@@ -195,8 +195,8 @@ async def code_patient(
 
 
 async def code_cohort(
-    patients: Dict[int, UncodedPatient],
-    recipes: Dict[int, PatientRecipe],
+    patients: dict[int, UncodedPatient],
+    recipes: dict[int, PatientRecipe],
     chroma_client: ClientAPI,
     embedder: Embed,
 ) -> Cohort:
