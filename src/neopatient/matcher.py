@@ -199,12 +199,12 @@ async def code_cohort(
     recipes: dict[int, PatientRecipe],
     chroma_client: ClientAPI,
     embedder: Embed,
-) -> Cohort:
-    """Match code descriptions for a cohort of patients and return list of patient records."""
+) -> dict[int, Patient]:
+    """Match code descriptions for a cohort of patients and return dict of patient records."""
 
-    cohort = []
+    cohort = {}
     for patient_id, patient in patients.items():
         recipe = recipes[patient_id]
         table = await code_patient(patient, recipe, patient_id, chroma_client, embedder)
-        cohort.append(table)
+        cohort[patient_id] = table
     return cohort

@@ -263,10 +263,11 @@ class SamplingResponse(RootModel[list[PatientRecipe]]):
 
 class State(BaseModel):
     stage: Stage
-    sampled_recipes: list[dict[int, PatientRecipe]] = Field(default_factory=list)
+    sampled_ids: list[list[int]] = Field(default_factory=list)
+    sampled_recipes: dict[int, PatientRecipe] = Field(default_factory=dict)
     sampling_batch_id: str | None = None
     generation_batch_id: str | None = None
-    generated_records: list[dict[int, UncodedPatient]] = Field(default_factory=list)
+    generated_records: dict[int, UncodedPatient] = Field(default_factory=dict)
     verification_batch_id: str | None = None
-    verifications: list[list[VerificationResponse]] = Field(default_factory=list)
+    verifications: dict[int, VerificationResponse] = Field(default_factory=dict)
     coded_cohorts: list[Cohort] = Field(default_factory=list)

@@ -453,6 +453,16 @@ async def _handle_sampling_stage(
 
         logger.info(f"Sampling prompt for cohort {cohort_idx}: {prompt[:100]}...")
 
+    # Pre-generate unique patient IDs for all cohorts
+    total_patients = sum(spec.count for spec in cohort_specs)
+    all_ids = random.sample(range(1, 1000000), total_patients)
+    sampled_ids = []
+    start = 0
+    for spec in cohort_specs:
+        sampled_ids.append(all_ids[start : start + spec.count])
+        start += spec.count
+    state.sampled_ids = sampled_ids
+
     # Submit batch sampling request
     schema = SamplingResponse.model_json_schema()
     batch_id = await batch_llm.ask(prompts_by_id, schema, sampler)
@@ -483,7 +493,7 @@ async def _handle_check_sampling_stage(
         return state
     results = await batch_llm.get(batch_id)
 
-    cohort_results: dict[int, dict[int, PatientRecipe]] = {}
+    sampled_recipes = {}
     for custom_id, content in results.items():
         # Extract cohort index from custom_id like "cohort_0_sampling"
         cohort_idx = int(custom_id.split("_")[1])
@@ -497,18 +507,17 @@ async def _handle_check_sampling_stage(
                 f"Cohort {cohort_idx}: Expected {expected_count} samples, got {len(sampling_response.root)}"
             )
 
-        cohort_ids = random.sample(
-            range(100000000, 1000000000), len(sampling_response.root)
-        )
-        cohort_results[cohort_idx] = dict(zip(cohort_ids, sampling_response.root))
+        cohort_ids = state.sampled_ids[cohort_idx]
+        cohort_recipes = dict(zip(cohort_ids, sampling_response.root))
+        sampled_recipes.update(cohort_recipes)
 
     # Check that all cohorts have results
-    if len(cohort_results) != len(cohort_specs):
+    if len(results) != len(cohort_specs):
         raise ValueError(
-            f"Expected {len(cohort_specs)} cohort results, got {len(cohort_results)}"
+            f"Expected {len(cohort_specs)} cohort results, got {len(results)}"
         )
 
-    state.sampled_recipes = [cohort_results[i] for i in range(len(cohort_specs))]
+    state.sampled_recipes = sampled_recipes
     state.stage = Stage.GENERATION
     return state
 
@@ -527,25 +536,17 @@ async def _handle_generation_stage(
     # Prepare batch requests
     prompts_by_id = {}
 
-    for cohort_idx, sampled in enumerate(state.sampled_recipes):
+    for cohort_idx, cohort_patient_ids in enumerate(state.sampled_ids):
         spec = cohort_specs[cohort_idx]
-        recipes = list(sampled.values())
-        patient_ids = list(sampled.keys())
-        prompts = create_generation_prompts(
-            spec.record_type, dict(zip(patient_ids, recipes))
-        )
+        recipes = {pid: state.sampled_recipes[pid] for pid in cohort_patient_ids}
+        prompts = create_generation_prompts(spec.record_type, recipes)
         segment_prompts = {}
         for pid, prompt in prompts:
             segment_prompts.setdefault(pid, []).append(prompt)
 
         for pid, prompt_list in segment_prompts.items():
             for seg_idx, prompt in enumerate(prompt_list):
-                salt = _generate_salt()
-                custom_id = (
-                    f"cohort_{cohort_idx}_patient_{pid}_segment_{seg_idx}_{salt}"
-                )
-
-                logger.info(f"Generation prompt for {custom_id}: {prompt}")
+                custom_id = f"patient_{pid}_segment_{seg_idx}"
                 prompts_by_id[custom_id] = prompt
 
     # Submit batch request
@@ -601,11 +602,12 @@ async def _handle_matching_stage(
     chroma_client = resolve_chroma_client(chroma_db)
 
     # Apply code matching to all generated records
-    state.coded_cohorts = []
-    for cohort_idx, cohort_dict in enumerate(state.generated_records):
-        recipes = state.sampled_recipes[cohort_idx]
-        matched = await code_cohort(cohort_dict, recipes, chroma_client, embedder)
-        state.coded_cohorts.append(matched)
+    matched = await code_cohort(
+        state.generated_records, state.sampled_recipes, chroma_client, embedder
+    )
+    state.coded_cohorts = [
+        [matched[pid] for pid in cohort_ids] for cohort_ids in state.sampled_ids
+    ]
 
     # Start verification stage
     state.stage = Stage.VERIFICATION
@@ -623,15 +625,13 @@ async def _start_verification_stage(
     # Prepare verification requests
     prompts_by_id = {}
 
-    for cohort_idx, cohort_records in enumerate(state.coded_cohorts):
-        spec = cohort_specs[cohort_idx]
-        positive = spec.positive
-        negative = spec.negative
-
-        for record_idx, record in enumerate(cohort_records):
-            prompt = create_verification_prompt(record, positive, negative)
+    for spec, cohort, cohort_ids in zip(
+        cohort_specs, state.coded_cohorts, state.sampled_ids
+    ):
+        for record, pid in zip(cohort, cohort_ids):
+            prompt = create_verification_prompt(record, spec.positive, spec.negative)
             salt = _generate_salt()
-            custom_id = f"verify_cohort_{cohort_idx}_patient_{record_idx}_{salt}"
+            custom_id = f"verify_patient_{pid}_{salt}"
             logger.info(f"Verification prompt for {custom_id}: {prompt}")
 
             prompts_by_id[custom_id] = prompt
@@ -676,22 +676,20 @@ def _handle_finalize_stage(
     """Finalize results by filtering satisfactory records."""
     final_results = []
 
-    for cohort_idx, (cohort_records, cohort_verifications) in enumerate(
-        zip(state.coded_cohorts, state.verifications)
+    for spec, cohort, cohort_ids in zip(
+        cohort_specs, state.coded_cohorts, state.sampled_ids
     ):
-        spec = cohort_specs[cohort_idx]
-        target_count = spec.count
         satisfactory_records = [
             record
-            for record, verification in zip(cohort_records, cohort_verifications)
-            if verification.satisfactory
-        ]
-        capped_records = satisfactory_records[:target_count]
-        if capped_records:
-            final_results.append(capped_records)
-        if len(satisfactory_records) < target_count:
+            for record, pid in zip(cohort, cohort_ids)
+            if state.verifications[pid].satisfactory
+        ][: spec.count]
+        if satisfactory_records:
+            final_results.append(satisfactory_records)
+        if len(satisfactory_records) < spec.count:
+            cohort_idx = cohort_specs.index(spec)
             print(
-                f"Warning: Cohort {cohort_idx} has only {len(satisfactory_records)} satisfactory records, expected {target_count}",
+                f"Warning: Cohort {cohort_idx} has only {len(satisfactory_records)} satisfactory records, expected {spec.count}",
                 file=sys.stderr,
             )
 
@@ -700,52 +698,43 @@ def _handle_finalize_stage(
 
 def _parse_generation_results(
     results: dict[str, str],
-    sampled_recipes: list[dict[int, PatientRecipe]],
+    sampled_recipes: dict[int, PatientRecipe],
     logger: logging.Logger,
-) -> list[dict[int, UncodedPatient]]:
-    """Parse generation results and organize by cohort, combining segments."""
-    cohort_records = [{} for _ in sampled_recipes]
-    segment_data = {}  # (cohort_idx, patient_id) -> list of (seg_idx, records)
+) -> dict[int, UncodedPatient]:
+    """Parse generation results and organize by patient, combining segments."""
+    cohort_records = {}
+    segment_data = {}  # patient_id -> list of (seg_idx, records)
 
     for custom_id, content in results.items():
         parts = custom_id.split("_")
-        cohort_idx = int(parts[1])
         patient_id = int(parts[3])
         seg_idx = int(parts[5])  # segment_{seg_idx}
         flat_generation_response = GenerationResponse.model_validate_json(content)
-        key = (cohort_idx, patient_id)
-        if key not in segment_data:
-            segment_data[key] = []
-        segment_data[key].append(
+        if patient_id not in segment_data:
+            segment_data[patient_id] = []
+        segment_data[patient_id].append(
             (seg_idx, flat_generation_response.records.unflatten())
         )
 
     # Combine segments for each patient
-    for (cohort_idx, patient_id), segments in segment_data.items():
+    for patient_id, segments in segment_data.items():
         combined_records = {}
         for seg_idx, records in sorted(segments, key=lambda x: x[0]):  # sort by seg_idx
             combined_records.update(records.root)
-        cohort_records[cohort_idx][patient_id] = UncodedPatient(combined_records)
+        cohort_records[patient_id] = UncodedPatient(combined_records)
 
     return cohort_records
 
 
 def _parse_verification_results(
     results: dict[str, str], logger: logging.Logger
-) -> list[list[VerificationResponse]]:
-    """Parse verification results and organize by cohort."""
-    # Determine number of cohorts from results
-    cohort_indices = set()
-    for custom_id in results.keys():
-        cohort_idx = int(custom_id.split("_")[2])
-        cohort_indices.add(cohort_idx)
-
-    max_cohort_idx = max(cohort_indices) if cohort_indices else 0
-    cohort_verifications = [[] for _ in range(max_cohort_idx + 1)]
+) -> dict[int, VerificationResponse]:
+    """Parse verification results and organize by patient."""
+    verifications = {}
 
     for custom_id, content in results.items():
-        cohort_idx = int(custom_id.split("_")[2])
+        pid = int(custom_id.split("_")[1])
         verification = VerificationResponse.model_validate_json(content)
-        cohort_verifications[cohort_idx].append(verification)
+        verifications[pid] = verification
 
-    return cohort_verifications
+    return verifications
