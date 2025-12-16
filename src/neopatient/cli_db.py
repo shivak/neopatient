@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import logging
+import os
 from .database import create_database
 from .embed import create_embedder
 from .cli_common import add_embedder_args
@@ -27,7 +28,11 @@ async def _main():
 
     # Configure logging
     logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(message)s", datefmt="%H:%M:%S"
+        level=getattr(
+            logging, os.environ.get("LOGLEVEL", "INFO").upper(), logging.INFO
+        ),
+        format="%(asctime)s - %(message)s",
+        datefmt="%H:%M:%S",
     )
     logger = logging.getLogger(__name__)
 

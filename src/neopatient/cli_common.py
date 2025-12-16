@@ -73,12 +73,6 @@ def add_synthesis_args(parser):
         default=None,
         help="Path to ChromaDB database directory, or None to download from Hugging Face",
     )
-    parser.add_argument(
-        "--log-level",
-        default="WARNING",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        help="Set logging level",
-    )
 
 
 def add_state_args(parser):

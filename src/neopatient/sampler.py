@@ -46,7 +46,6 @@ async def sample_recipes(
     n: int,
     record_type: RecordType,
     sampler_model: str = "gpt-5",
-    logger: logging.Logger | None = None,
 ) -> list[PatientRecipe]:
     """
     Samples individual patient recipes that satisfy cohort criteria.
@@ -61,11 +60,11 @@ async def sample_recipes(
         n: Number of patients to sample
          record_type: Type of record (RecordType enum)
         sampler_model: Model name for sampling (default: "gpt-5")
-        logger: Optional logger for logging the LLM response
 
     Returns:
         List of PatientRecipe objects
     """
+    logger = logging.getLogger(__name__)
 
     csv_path = _get_csv_path(record_type)
     stats = sample_patient_stats(csv_path, n)
@@ -73,8 +72,7 @@ async def sample_recipes(
     prompt = SAMPLE_TEMPLATE.render(
         positive_cohort=positive, negative_cohort=negative, n=n, stats=stats
     )
-    if logger:
-        logger.info(f"Sampling prompt: {prompt}")
+    logger.info(f"Sampling prompt: {prompt}")
     response = await client.chat.completions.create(
         model=sampler_model,
         messages=[{"role": "user", "content": prompt}],
@@ -89,8 +87,7 @@ async def sample_recipes(
         temperature=0.7,
     )
     content = response.choices[0].message.content
-    if logger:
-        logger.info(f"Sampling response: {content}")
+    logger.info(f"Sampling response: {content}")
     if content is None:
         raise ValueError("LLM response content is None")
     sampling_response = SamplingResponse.model_validate_json(content)
@@ -108,9 +105,9 @@ async def _handle_sampling_stage(
     cohort_specs: list[CohortSpec],
     chroma_db,
     embedder,
-    logger: logging.Logger,
 ) -> list[Cohort] | State:
     """Sample individual patient recipes for each cohort using batch processing."""
+    logger = logging.getLogger(__name__)
     # Create batch sampling requests for all cohorts
     prompts_by_id = {}
     cohort_info = []  # Track (cohort_idx, expected_count) for validation
@@ -157,7 +154,6 @@ async def _handle_check_sampling_stage(
     cohort_specs: list[CohortSpec],
     chroma_db,
     embedder,
-    logger: logging.Logger,
 ) -> list[Cohort] | State:
     """Check if sampling batch is ready and parse results."""
     if not state.sampling_batch_id:

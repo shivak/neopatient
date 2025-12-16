@@ -87,9 +87,9 @@ async def _start_verification_stage(
     batch_llm: BatchLLM,
     state: State,
     cohort_specs: list[CohortSpec],
-    logger: logging.Logger,
 ) -> list[Cohort] | State:
     """Start verification stage using batch API."""
+    logger = logging.getLogger(__name__)
     # Prepare verification requests
     prompts_by_id = {}
 
@@ -119,7 +119,6 @@ async def _handle_check_verification_stage(
     batch_llm: BatchLLM,
     state: State,
     cohort_specs: list[CohortSpec],
-    logger: logging.Logger,
 ) -> list[Cohort] | State:
     """Check if verification batch is ready."""
     if not state.verification_batch_id:
@@ -129,14 +128,14 @@ async def _handle_check_verification_stage(
     results = await batch_llm.get(batch_id)
     if results is None:
         return state
-    state.verifications = _parse_verification_results(results, logger)
+    state.verifications = _parse_verification_results(results)
 
     state.stage = Stage.FINALIZE
     return state
 
 
 def _parse_verification_results(
-    results: dict[str, str], logger: logging.Logger
+    results: dict[str, str],
 ) -> dict[int, VerificationResponse]:
     """Parse verification results and organize by patient."""
     verifications = {}

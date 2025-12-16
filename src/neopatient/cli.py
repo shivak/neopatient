@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import logging
+import os
 import pathlib
 import sys
 import pyarrow as pa
@@ -49,7 +50,9 @@ async def _main():
 
     # Configure logging
     logging.basicConfig(
-        level=getattr(logging, args.log_level.upper()),
+        level=getattr(
+            logging, os.environ.get("LOGLEVEL", "WARNING").upper(), logging.WARNING
+        ),
         format="%(asctime)s - %(message)s",
         datefmt="%H:%M:%S",
     )

@@ -103,16 +103,13 @@ async def synthesize_patient(
     Raises:
         ValueError: If the generated record does not satisfy the cohort criteria
     """
-    logger = logging.getLogger(__name__)
     chroma_client = resolve_chroma_client(chroma_db)
     embedder = create_embedder(
         embedder_model, embedder_batch_size, embedder_args, embedder_base_url
     )
 
     # Sample recipe
-    sampled = await sample_recipes(
-        client, positive, negative, 1, record_type, sampler, logger
-    )
+    sampled = await sample_recipes(client, positive, negative, 1, record_type, sampler)
     recipe = sampled[0]
 
     # Generate uncoded patient
@@ -158,7 +155,6 @@ async def _synthesize_cohorts(
                 cohort_specs,
                 chroma_db,
                 embedder,
-                logger,
             )
         case Stage.CHECK_SAMPLING:
             return await _handle_check_sampling_stage(
@@ -167,7 +163,6 @@ async def _synthesize_cohorts(
                 cohort_specs,
                 chroma_db,
                 embedder,
-                logger,
             )
         case Stage.GENERATION:
             return await _handle_generation_stage(
@@ -176,7 +171,6 @@ async def _synthesize_cohorts(
                 cohort_specs,
                 chroma_db,
                 embedder,
-                logger,
             )
         case Stage.CHECK_GENERATION:
             return await _handle_check_generation_stage(
@@ -185,7 +179,6 @@ async def _synthesize_cohorts(
                 cohort_specs,
                 chroma_db,
                 embedder,
-                logger,
             )
         case Stage.MATCHING:
             return await _handle_matching_stage(
@@ -193,15 +186,14 @@ async def _synthesize_cohorts(
                 chroma_db,
                 embedder,
                 cohort_specs,
-                logger,
             )
         case Stage.VERIFICATION:
             return await _start_verification_stage(
-                verifier, current_state, cohort_specs, logger
+                verifier, current_state, cohort_specs
             )
         case Stage.CHECK_VERIFICATION:
             return await _handle_check_verification_stage(
-                verifier, current_state, cohort_specs, logger
+                verifier, current_state, cohort_specs
             )
         case Stage.FINALIZE:
             return _handle_finalize_stage(current_state, cohort_specs)

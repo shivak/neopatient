@@ -14,7 +14,6 @@ from .embed import Embed
 from .database import resolve_chroma_client
 import pyarrow as pa
 import datetime
-import logging
 
 
 def _format_code(code_system: CodeSystem, code: str) -> str:
@@ -226,7 +225,6 @@ async def _handle_matching_stage(
     chroma_db,
     embedder,
     cohort_specs,
-    logger: logging.Logger,
 ) -> list[Cohort] | State:
     """Handle code matching stage and start verification."""
     chroma_client = resolve_chroma_client(chroma_db)

@@ -129,7 +129,6 @@ async def _handle_generation_stage(
     cohort_specs: list[CohortSpec],
     chroma_db,
     embedder,
-    logger: logging.Logger,
 ) -> list[Cohort] | State:
     """Handle the initial generation stage using batch API."""
     # Prepare batch requests
@@ -165,7 +164,6 @@ async def _handle_check_generation_stage(
     cohort_specs: list[CohortSpec],
     chroma_db,
     embedder,
-    logger: logging.Logger,
 ) -> list[Cohort] | State:
     """Check if generation batch is ready and start verification if so."""
     if not state.generation_batch_id:
@@ -176,9 +174,7 @@ async def _handle_check_generation_stage(
     results = await batch_llm.get(batch_id)
     if results is None:
         return state
-    state.generated_records = _parse_generation_results(
-        results, state.sampled_recipes, logger
-    )
+    state.generated_records = _parse_generation_results(results, state.sampled_recipes)
 
     state.stage = Stage.MATCHING
     return state
@@ -187,7 +183,6 @@ async def _handle_check_generation_stage(
 def _parse_generation_results(
     results: dict[str, str],
     sampled_recipes: dict[int, PatientRecipe],
-    logger: logging.Logger,
 ) -> dict[int, UncodedPatient]:
     """Parse generation results and organize by patient, combining segments."""
     cohort_records = {}
