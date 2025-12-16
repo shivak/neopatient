@@ -1,9 +1,20 @@
 from chromadb.api import ClientAPI
 
-from .models import CodeSystem, UncodedPatient, Patient, Cohort, PatientRecipe
+from .models import (
+    CodeSystem,
+    UncodedPatient,
+    Patient,
+    PatientRecipe,
+    State,
+    Cohort,
+    Stage,
+)
 from .embed import Embed
+from .database import resolve_chroma_client
 import pyarrow as pa
 import datetime
+import logging
+from typing import Union, List
 
 
 def _format_code(code_system: CodeSystem, code: str) -> str:
@@ -208,3 +219,28 @@ async def code_cohort(
         table = await code_patient(patient, recipe, patient_id, chroma_client, embedder)
         cohort[patient_id] = table
     return cohort
+
+
+async def _handle_matching_stage(
+    batch_llm,
+    state: State,
+    chroma_db,
+    embedder,
+    cohort_specs,
+    verifier,
+    logger: logging.Logger,
+) -> Union[List[Cohort], State]:
+    """Handle code matching stage and start verification."""
+    chroma_client = resolve_chroma_client(chroma_db)
+
+    # Apply code matching to all generated records
+    matched = await code_cohort(
+        state.generated_records, state.sampled_recipes, chroma_client, embedder
+    )
+    state.coded_cohorts = [
+        [matched[pid] for pid in cohort_ids] for cohort_ids in state.sampled_ids
+    ]
+
+    # Start verification stage
+    state.stage = Stage.VERIFICATION
+    return state

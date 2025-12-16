@@ -1,5 +1,5 @@
 __version__ = "0.1.0"
-from .generator import (
+from .synthesis import (
     synthesize_patient,
     synthesize_cohorts,
     synthesize_cohorts_with_state_file,

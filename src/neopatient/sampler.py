@@ -1,10 +1,12 @@
 import logging
 import os
-from typing import Any, Optional
+import random
+from typing import Any, Optional, Union, List
 from openai import AsyncOpenAI
 import jinja2
 import pandas as pd
-from .models import PatientRecipe, SamplingResponse, RecordType
+from .models import PatientRecipe, SamplingResponse, RecordType, State, CohortSpec, Cohort, Stage
+from .batch_llm import BatchLLM
 
 # Get the directory of the current file to construct template path
 _current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -90,3 +92,105 @@ async def sample_recipes(
         raise ValueError(f"Expected {n} samples, got {len(sampling_response.root)}")
 
     return sampling_response.root
+
+
+async def _handle_sampling_stage(
+    batch_llm: BatchLLM,
+    state: State,
+    cohort_specs: list[CohortSpec],
+    sampler: str,
+    generator: str,
+    chroma_db,
+    embedder,
+    verifier: str,
+    logger: logging.Logger,
+) -> Union[List[Cohort], State]:
+    """Sample individual patient recipes for each cohort using batch processing."""
+    # Create batch sampling requests for all cohorts
+    prompts_by_id = {}
+    cohort_info = []  # Track (cohort_idx, expected_count) for validation
+
+    for cohort_idx, spec in enumerate(cohort_specs):
+        csv_path = _get_csv_path(spec.record_type)
+        stats = sample_patient_stats(csv_path, spec.count)
+
+        prompt = SAMPLE_TEMPLATE.render(
+            positive_cohort=spec.positive,
+            negative_cohort=spec.negative,
+            n=spec.count,
+            stats=stats,
+        )
+
+        custom_id = f"cohort_{cohort_idx}_sampling"
+        prompts_by_id[custom_id] = prompt
+        cohort_info.append((cohort_idx, spec.count))
+
+        logger.info(f"Sampling prompt for cohort {cohort_idx}: {prompt[:100]}...")
+
+    # Pre-generate unique patient IDs for all cohorts
+    total_patients = sum(spec.count for spec in cohort_specs)
+    all_ids = random.sample(range(1, 1000000), total_patients)
+    sampled_ids = []
+    start = 0
+    for spec in cohort_specs:
+        sampled_ids.append(all_ids[start : start + spec.count])
+        start += spec.count
+    state.sampled_ids = sampled_ids
+
+    # Submit batch sampling request
+    schema = SamplingResponse.model_json_schema()
+    batch_id = await batch_llm.ask(prompts_by_id, schema, sampler)
+    state.sampling_batch_id = batch_id
+    state.stage = Stage.CHECK_SAMPLING
+
+    return state
+
+
+async def _handle_check_sampling_stage(
+    batch_llm: BatchLLM,
+    state: State,
+    cohort_specs: list[CohortSpec],
+    sampler: str,
+    generator: str,
+    chroma_db,
+    embedder,
+    verifier: str,
+    logger: logging.Logger,
+) -> Union[List[Cohort], State]:
+    """Check if sampling batch is ready and parse results."""
+    if not state.sampling_batch_id:
+        raise ValueError("No sampling batch ID found in state")
+
+    batch_id = state.sampling_batch_id
+    is_done = await batch_llm.is_done(batch_id)
+    if not is_done:
+        return state
+    results = await batch_llm.get(batch_id)
+
+    sampled_recipes = {}
+    for custom_id, content in results.items():
+        # Extract cohort index from custom_id like "cohort_0_sampling"
+        cohort_idx = int(custom_id.split("_")[1])
+
+        sampling_response = SamplingResponse.model_validate_json(content)
+
+        # Validate we got the expected number of recipes
+        expected_count = cohort_specs[cohort_idx].count
+        if len(sampling_response.root) < expected_count:
+            raise ValueError(
+                f"Cohort {cohort_idx}: Expected {expected_count} samples, got {len(sampling_response.root)}"
+            )
+
+        cohort_ids = state.sampled_ids[cohort_idx]
+        cohort_recipes = dict(zip(cohort_ids, sampling_response.root))
+        sampled_recipes.update(cohort_recipes)
+
+    # Check that all cohorts have results
+    if len(results) != len(cohort_specs):
+        raise ValueError(
+            f"Expected {len(cohort_specs)} cohort results, got {len(results)}"
+        )
+
+    state.sampled_recipes = sampled_recipes
+    state.stage = Stage.GENERATION
+    return state
