@@ -134,7 +134,7 @@ async def _handle_sampling_stage(
 
     # Pre-generate unique patient IDs for all cohorts
     total_patients = sum(spec.count for spec in cohort_specs)
-    all_ids = random.sample(range(1, 1000000), total_patients)
+    all_ids = random.sample(range(1, 2**63 - 1), total_patients)
     sampled_ids = []
     start = 0
     for spec in cohort_specs:
