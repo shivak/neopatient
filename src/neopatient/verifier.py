@@ -144,7 +144,7 @@ def _parse_verification_results(
     verifications = {}
 
     for custom_id, content in results.items():
-        pid = int(custom_id.split("_")[1])
+        pid = int(custom_id.split("_")[2])
         verification = VerificationResponse.model_validate_json(content)
         verifications[pid] = verification
 
