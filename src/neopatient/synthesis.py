@@ -111,14 +111,10 @@ async def synthesize_patient(
     return record
 
 
-async def synthesize_cohorts(
+async def _synthesize_cohorts(
     cohort_specs: list[CohortSpec],
-    chroma_db: ClientAPI | pathlib.Path | None,
-    embedder_model: str | None,
-    embedder_batch_size: int | None,
-    embedder_args: dict | None,
-    embedder_base_url: str | None = None,
-    epsilon: float = 0.2,
+    chroma_db: ClientAPI,
+    embedder,
     state: State | None = None,
     generator: str = "gpt-5",
     verifier: str = "gpt-5-nano",
@@ -128,40 +124,6 @@ async def synthesize_cohorts(
 
     # Create batch LLM instance
     batch_llm = create_batch_llm(generator)
-
-    """
-    Generates synthetic patient records in batch using OpenAI's batch API.
-
-    Process:
-    1. Sample individual patient descriptions for each cohort.
-    2. Generate longitudinal records for each individual.
-    3. Match codes using ChromaDB.
-    4. Verify records satisfy cohort-level criteria.
-    5. Return satisfactory records.
-
-    Args:
-        cohort_specs: List of cohort specifications, each containing:
-            - count: Number of patients to generate for this cohort
-            - positive: Positive cohort description
-            - negative: Negative (anti-cohort) description
-        chroma_db: The ChromaDB client, path, or None for code matching
-        embedder_model: Embedder model name for code matching
-        embedder_args: Embedder args dict for code matching
-        epsilon: Over-generation factor (deprecated, now exact count from sampling)
-        state: Optional state to resume from a previous batch operation
-        generator: Model name for generation (default: "gpt-5")
-        verifier: Model name for verification (default: "gpt-5-nano")
-        sampler: Model name for sampling (default: "gpt-5")
-
-    Returns:
-        Either:
-        - List of cohorts, where each cohort is a list of patient records
-        - State dictionary for resuming if batch is not ready yet
-    """
-    chroma_db = resolve_chroma_client(chroma_db)
-    embedder = create_embedder(
-        embedder_model, embedder_batch_size, embedder_args, embedder_base_url
-    )
 
     # If resuming from state, use existing state
     if state is not None:
@@ -242,6 +204,61 @@ async def synthesize_cohorts(
             raise ValueError(f"Unknown stage: {current_state.stage}")
 
 
+async def synthesize_cohorts(
+    cohort_specs: list[CohortSpec],
+    chroma_db: ClientAPI | pathlib.Path | None,
+    embedder_model: str | None,
+    embedder_batch_size: int | None,
+    embedder_args: dict | None,
+    embedder_base_url: str | None = None,
+    state: State | None = None,
+    generator: str = "gpt-5",
+    verifier: str = "gpt-5-nano",
+    sampler: str = "gpt-5",
+) -> Union[List[Cohort], State]:
+    logger = logging.getLogger(__name__)
+
+    # Create batch LLM instance
+    batch_llm = create_batch_llm(generator)
+
+    """
+    Generates synthetic patient records in batch using OpenAI's batch API.
+
+    Process:
+    1. Sample individual patient descriptions for each cohort.
+    2. Generate longitudinal records for each individual.
+    3. Match codes using ChromaDB.
+    4. Verify records satisfy cohort-level criteria.
+    5. Return satisfactory records.
+
+    Args:
+        cohort_specs: List of cohort specifications, each containing:
+            - count: Number of patients to generate for this cohort
+            - positive: Positive cohort description
+            - negative: Negative (anti-cohort) description
+        chroma_db: The ChromaDB client, path, or None for code matching
+        embedder_model: Embedder model name for code matching
+        embedder_args: Embedder args dict for code matching
+        state: Optional state to resume from a previous batch operation
+        generator: Model name for generation (default: "gpt-5")
+        verifier: Model name for verification (default: "gpt-5-nano")
+        sampler: Model name for sampling (default: "gpt-5")
+
+    Returns:
+        Either:
+        - List of cohorts, where each cohort is a list of patient records
+        - State dictionary for resuming if batch is not ready yet
+    """
+    chroma_db = resolve_chroma_client(chroma_db)
+    embedder = create_embedder(
+        embedder_model, embedder_batch_size, embedder_args, embedder_base_url
+    )
+
+    return await _synthesize_cohorts(
+        cohort_specs, chroma_db, embedder, state, generator, verifier, sampler
+    )
+
+
 async def synthesize_cohorts_with_state_file(
     cohort_specs: list[CohortSpec],
     chroma_db: ClientAPI | pathlib.Path | None,
@@ -272,19 +289,22 @@ async def synthesize_cohorts_with_state_file(
     Returns:
         List of cohorts (each cohort is list of Patient tables)
     """
+    # Resolve dependencies once outside the loop
+    chroma_db = resolve_chroma_client(chroma_db)
+    embedder = create_embedder(
+        embedder_model, embedder_batch_size, embedder_args, embedder_base_url
+    )
+
     state = None
     if state_file.exists():
         with open(state_file, "r") as f:
             state = State.model_validate(json.load(f))
 
     while True:
-        result = await synthesize_cohorts(
+        result = await _synthesize_cohorts(
             cohort_specs=cohort_specs,
             chroma_db=chroma_db,
-            embedder_model=embedder_model,
-            embedder_batch_size=embedder_batch_size,
-            embedder_args=embedder_args,
-            embedder_base_url=embedder_base_url,
+            embedder=embedder,
             generator=generator,
             verifier=verifier,
             sampler=sampler,
