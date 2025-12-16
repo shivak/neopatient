@@ -15,7 +15,7 @@ from pydantic import (
 import pyarrow as pa
 import pyarrow.parquet as pq
 import base64
-from meds.schema import DataSchema
+from .schema import PatientSchema
 
 
 class CodeSystem(str, Enum):
@@ -171,7 +171,7 @@ def _serialize_patient_table(t: pa.Table) -> str:
 def _validate_patient_table(table) -> pa.Table:
     if isinstance(table, str):
         table = _deserialize_table(table)
-    DataSchema.validate(table)
+    PatientSchema.validate(table)
     return table
 
 

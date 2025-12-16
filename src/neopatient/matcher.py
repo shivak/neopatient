@@ -9,6 +9,7 @@ from .models import (
     Cohort,
     Stage,
 )
+from .schema import PatientSchema
 from .embed import Embed
 from .database import resolve_chroma_client
 import pyarrow as pa
@@ -201,7 +202,7 @@ async def code_patient(
             idx += 1
 
     # Don't validate against PatientSchema because code_descr gets dropped
-    table = pa.Table.from_pylist(rows)
+    table = pa.Table.from_pylist(rows, schema=PatientSchema.schema())
     return table
 
 
