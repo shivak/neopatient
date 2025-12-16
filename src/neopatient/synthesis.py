@@ -248,11 +248,11 @@ async def synthesize_cohorts_with_state_file(
     embedder_model: str | None,
     embedder_batch_size: int | None,
     embedder_args: dict | None,
+    state_file: pathlib.Path,
     embedder_base_url: str | None = None,
     generator: str = "gpt-5-nano",
     verifier: str = "gpt-5",
     sampler: str = "gpt-5",
-    state_file: str | pathlib.Path | None = None,
     poll_interval: int = 15 * 60,
 ) -> list[Cohort]:
     """
@@ -266,14 +266,14 @@ async def synthesize_cohorts_with_state_file(
         generator: Model for generation
         verifier: Model for verification
         sampler: Model for sampling
-        state_file: Path to state file for resuming
+        state_file: pathlib.Path to state file for resuming
         poll_interval: Seconds to wait between polls
 
     Returns:
         List of cohorts (each cohort is list of Patient tables)
     """
     state = None
-    if state_file and pathlib.Path(state_file).exists():
+    if state_file.exists():
         with open(state_file, "r") as f:
             state = State.model_validate(json.load(f))
 
@@ -291,13 +291,12 @@ async def synthesize_cohorts_with_state_file(
             state=state,
         )
         if isinstance(result, list):
-            if state_file and pathlib.Path(state_file).exists():
-                os.unlink(state_file)
             return result
         else:
-            if state_file:
-                with open(state_file, "w") as f:
-                    json.dump(result.model_dump(), f)
+            with open(state_file, "w") as f:
+                # Serialize to string first to avoid partial writes if serialization fails
+                state_json = json.dumps(result.model_dump(), default=str)
+                f.write(state_json)
             time.sleep(poll_interval)
             state = result
 

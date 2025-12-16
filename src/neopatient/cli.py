@@ -116,7 +116,7 @@ async def _main():
                 generator=args.generator,
                 verifier=args.verifier,
                 sampler=args.sampler,
-                state_file=args.state_file,
+                state_file=pathlib.Path(args.state_file),
                 poll_interval=args.poll_interval,
             )
             cohort = result[0]  # list of Patient tables
