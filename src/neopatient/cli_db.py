@@ -26,37 +26,24 @@ async def _main():
 
     args = parser.parse_args()
 
-    # Validate embedder_batch_size
-    if args.embedder_batch_size <= 0:
-        print(
-            f"Error: --embedder-batch-size must be a positive integer, got {args.embedder_batch_size}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
     # Configure logging
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s - %(message)s", datefmt="%H:%M:%S"
     )
     logger = logging.getLogger(__name__)
 
-    try:
-        embedder = create_embedder(
-            args.embedder,
-            args.embedder_batch_size,
-            args.embedder_args,
-            args.embedder_base_url,
-        )
-        logger.info(f"Using embedder: {args.embedder}")
+    embedder = create_embedder(
+        args.embedder,
+        args.embedder_batch_size,
+        args.embedder_args,
+        args.embedder_base_url,
+    )
+    logger.info(f"Using embedder: {args.embedder}")
 
-        logger.info("Setting up databases...")
-        await create_database(args.parquet_path, embedder, args.db_dir)
-        logger.info("Database setup completed")
-        print(f"ChromaDB created successfully at {args.db_dir}")
-    except Exception as e:
-        logger.error(f"Error during database setup: {e}")
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+    logger.info("Setting up databases...")
+    await create_database(args.parquet_path, embedder, args.db_dir)
+    logger.info("Database setup completed")
+    print(f"ChromaDB created successfully at {args.db_dir}")
 
 
 def main():

@@ -47,14 +47,6 @@ async def _main():
         parser.print_help()
         sys.exit(1)
 
-    # Validate embedder_batch_size
-    if args.embedder_batch_size <= 0:
-        print(
-            f"Error: --embedder-batch-size must be a positive integer, got {args.embedder_batch_size}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
     # Configure logging
     logging.basicConfig(
         level=getattr(logging, args.log_level.upper()),
@@ -66,66 +58,58 @@ async def _main():
     # Set ChromaDB parameter
     chroma_db = pathlib.Path(args.db_dir) if args.db_dir else None
 
-    # Create OpenAI client
-    client = AsyncOpenAI(max_retries=0)
-
-    # Apply rate limiting if requested
-    if hasattr(args, "llm_per_min") and args.llm_per_min is not None:
-        apply_rate_limiting(client, requests_per_minute=args.llm_per_min)
-
     if args.command == "single":
-        try:
-            record = await synthesize_patient(
-                client,
-                positive=args.positive,
-                negative=args.negative,
-                patient_id=1,
-                chroma_db=chroma_db,
-                embedder_model=args.embedder,
-                embedder_batch_size=args.embedder_batch_size,
-                embedder_args=args.embedder_args,
-                embedder_base_url=args.embedder_base_url,
-                generator=args.generator,
-                verifier=args.verifier,
-                record_type=RecordType(args.record_type),
-                sampler=args.sampler,
-            )
-            logger.info("Patient record generated")
-            parquet.write_table(record, args.out)
-        except ValueError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
+        # Create OpenAI client
+        client = AsyncOpenAI(max_retries=0)
+
+        # Apply rate limiting if requested
+        if hasattr(args, "llm_per_min") and args.llm_per_min is not None:
+            apply_rate_limiting(client, requests_per_minute=args.llm_per_min)
+
+        record = await synthesize_patient(
+            client,
+            positive=args.positive,
+            negative=args.negative,
+            patient_id=1,
+            chroma_db=chroma_db,
+            embedder_model=args.embedder,
+            embedder_batch_size=args.embedder_batch_size,
+            embedder_args=args.embedder_args,
+            embedder_base_url=args.embedder_base_url,
+            generator=args.generator,
+            verifier=args.verifier,
+            record_type=RecordType(args.record_type),
+            sampler=args.sampler,
+        )
+        logger.info("Patient record generated")
+        parquet.write_table(record, args.out)
 
     elif args.command == "cohort":
-        try:
-            cohort_specs = [
-                CohortSpec(
-                    positive=args.positive,
-                    negative=args.negative,
-                    count=args.size,
-                    record_type=RecordType(args.record_type),
-                )
-            ]
-            result = await synthesize_cohorts_with_state_file(
-                cohort_specs=cohort_specs,
-                chroma_db=chroma_db,
-                embedder_model=args.embedder,
-                embedder_batch_size=args.embedder_batch_size,
-                embedder_args=args.embedder_args,
-                embedder_base_url=args.embedder_base_url,
-                generator=args.generator,
-                verifier=args.verifier,
-                sampler=args.sampler,
-                state_file=pathlib.Path(args.state_file),
-                poll_interval=args.poll_interval,
+        cohort_specs = [
+            CohortSpec(
+                positive=args.positive,
+                negative=args.negative,
+                count=args.size,
+                record_type=RecordType(args.record_type),
             )
-            cohort = result[0]  # list of Patient tables
-            big_table = pa.concat_tables(cohort)
-            parquet.write_table(big_table, args.out)
-            logger.info("Cohort generated and written to %s", args.out)
-        except ValueError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
+        ]
+        result = await synthesize_cohorts_with_state_file(
+            cohort_specs=cohort_specs,
+            chroma_db=chroma_db,
+            embedder_model=args.embedder,
+            embedder_batch_size=args.embedder_batch_size,
+            embedder_args=args.embedder_args,
+            embedder_base_url=args.embedder_base_url,
+            generator=args.generator,
+            verifier=args.verifier,
+            sampler=args.sampler,
+            state_file=pathlib.Path(args.state_file),
+            poll_interval=args.poll_interval,
+        )
+        cohort = result[0]  # list of Patient tables
+        big_table = pa.concat_tables(cohort)
+        parquet.write_table(big_table, args.out)
+        logger.info("Cohort generated and written to %s", args.out)
 
 
 def main():

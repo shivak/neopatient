@@ -1,5 +1,17 @@
+import argparse
 import json
 from .models import RecordType
+
+
+def validate_positive_int(value: str) -> int:
+    """Validate that the value is a positive integer."""
+    try:
+        ivalue = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid int value: '{value}'")
+    if ivalue <= 0:
+        raise argparse.ArgumentTypeError(f"must be a positive integer, got {ivalue}")
+    return ivalue
 
 
 def add_embedder_args(parser):
@@ -18,7 +30,7 @@ def add_embedder_args(parser):
     )
     parser.add_argument(
         "--embedder-batch-size",
-        type=int,
+        type=validate_positive_int,
         help="Batch size for embedding operations",
     )
 
