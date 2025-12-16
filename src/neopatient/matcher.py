@@ -15,7 +15,6 @@ from .database import resolve_chroma_client
 import pyarrow as pa
 import datetime
 import logging
-from typing import Union, List
 
 
 def _format_code(code_system: CodeSystem, code: str) -> str:
@@ -45,11 +44,11 @@ async def match_codes_in_system(
 
     Args:
         coding_system (CodeSystem): The medical coding system
-        descriptions (List[str]): List of descriptions to match against
+        descriptions (list[str]): List of descriptions to match against
         chroma_client (ClientAPI): The ChromaDB client
 
     Returns:
-        List[Tuple[str, str]]: List of (code, description) tuples for each input description.
+        list[Tuple[str, str]]: List of (code, description) tuples for each input description.
     """
     if not descriptions:
         return []
@@ -84,11 +83,11 @@ async def match_codes(
     Groups queries by coding system for optimal batch processing.
 
     Args:
-        queries (List[Tuple[str, str]]): List of (coding_system, description) tuples
+        queries (list[Tuple[str, str]]): List of (coding_system, description) tuples
         chroma_client (chromadb.PersistentClient): The ChromaDB client
 
     Returns:
-        List[Tuple[CodeSystem, str, str]]: List of (code_system, code, description) tuples in the same order as input queries
+        list[Tuple[CodeSystem, str, str]]: List of (code_system, code, description) tuples in the same order as input queries
     """
     if not queries:
         return []
@@ -228,7 +227,7 @@ async def _handle_matching_stage(
     embedder,
     cohort_specs,
     logger: logging.Logger,
-) -> Union[List[Cohort], State]:
+) -> list[Cohort] | State:
     """Handle code matching stage and start verification."""
     chroma_client = resolve_chroma_client(chroma_db)
 

@@ -93,7 +93,7 @@ async def _main():
                 record_type=RecordType(args.record_type),
             )
         ]
-        result = await synthesize_cohorts_with_state_file(
+        cohorts = await synthesize_cohorts_with_state_file(
             cohort_specs=cohort_specs,
             chroma_db=chroma_db,
             embedder_model=args.embedder,
@@ -106,7 +106,7 @@ async def _main():
             state_file=pathlib.Path(args.state_file),
             poll_interval=args.poll_interval,
         )
-        cohort = result[0]  # list of Patient tables
+        cohort = cohorts[0]  # list of Patient tables
         big_table = pa.concat_tables(cohort)
         parquet.write_table(big_table, args.out)
         logger.info("Cohort generated and written to %s", args.out)

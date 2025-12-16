@@ -2,7 +2,7 @@ import json
 import logging
 
 import pathlib
-from typing import List, Union
+
 from openai import AsyncOpenAI
 
 from chromadb.api import ClientAPI
@@ -139,7 +139,7 @@ async def _synthesize_cohorts(
     generator: BatchLLM,
     verifier: BatchLLM,
     state: State | None = None,
-) -> Union[List[Cohort], State]:
+) -> list[Cohort] | State:
     logger = logging.getLogger(__name__)
 
     # If resuming from state, use existing state
@@ -221,7 +221,7 @@ async def synthesize_cohorts(
     verifier: str = "gpt-5-nano",
     sampler: str = "gpt-5",
     poll_interval: int | None = None,
-) -> Union[List[Cohort], State]:
+) -> list[Cohort] | State:
     """
     Generates synthetic patient records in batch using OpenAI's batch API.
 
@@ -344,7 +344,7 @@ async def synthesize_cohorts_with_state_file(
 
 def _handle_finalize_stage(
     state: State, cohort_specs: list[CohortSpec]
-) -> List[Cohort]:
+) -> list[Cohort]:
     """Finalize results by filtering satisfactory records."""
     final_results = []
 

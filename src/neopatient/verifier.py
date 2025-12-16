@@ -2,7 +2,7 @@ import logging
 import os
 import random
 import string
-from typing import Union, List
+
 import jinja2
 from openai import AsyncOpenAI
 
@@ -88,7 +88,7 @@ async def _start_verification_stage(
     state: State,
     cohort_specs: list[CohortSpec],
     logger: logging.Logger,
-) -> Union[List[Cohort], State]:
+) -> list[Cohort] | State:
     """Start verification stage using batch API."""
     # Prepare verification requests
     prompts_by_id = {}
@@ -120,7 +120,7 @@ async def _handle_check_verification_stage(
     state: State,
     cohort_specs: list[CohortSpec],
     logger: logging.Logger,
-) -> Union[List[Cohort], State]:
+) -> list[Cohort] | State:
     """Check if verification batch is ready."""
     if not state.verification_batch_id:
         raise ValueError("No verification batch ID found in state")

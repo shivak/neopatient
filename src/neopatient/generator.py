@@ -16,7 +16,6 @@ from .models import (
     Cohort,
 )
 from .batch_llm import BatchLLM
-from typing import Union, List
 
 
 # Get the directory of the current file to construct template path
@@ -131,7 +130,7 @@ async def _handle_generation_stage(
     chroma_db,
     embedder,
     logger: logging.Logger,
-) -> Union[List[Cohort], State]:
+) -> list[Cohort] | State:
     """Handle the initial generation stage using batch API."""
     # Prepare batch requests
     prompts_by_id = {}
@@ -167,7 +166,7 @@ async def _handle_check_generation_stage(
     chroma_db,
     embedder,
     logger: logging.Logger,
-) -> Union[List[Cohort], State]:
+) -> list[Cohort] | State:
     """Check if generation batch is ready and start verification if so."""
     if not state.generation_batch_id:
         raise ValueError("No generation batch ID found in state")

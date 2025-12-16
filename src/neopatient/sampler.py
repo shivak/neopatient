@@ -1,7 +1,7 @@
 import logging
 import os
 import random
-from typing import Any, Optional, Union, List
+from typing import Any
 from openai import AsyncOpenAI
 import jinja2
 import pandas as pd
@@ -46,7 +46,7 @@ async def sample_recipes(
     n: int,
     record_type: RecordType,
     sampler_model: str = "gpt-5",
-    logger: Optional[logging.Logger] = None,
+    logger: logging.Logger | None = None,
 ) -> list[PatientRecipe]:
     """
     Samples individual patient recipes that satisfy cohort criteria.
@@ -109,7 +109,7 @@ async def _handle_sampling_stage(
     chroma_db,
     embedder,
     logger: logging.Logger,
-) -> Union[List[Cohort], State]:
+) -> list[Cohort] | State:
     """Sample individual patient recipes for each cohort using batch processing."""
     # Create batch sampling requests for all cohorts
     prompts_by_id = {}
@@ -158,7 +158,7 @@ async def _handle_check_sampling_stage(
     chroma_db,
     embedder,
     logger: logging.Logger,
-) -> Union[List[Cohort], State]:
+) -> list[Cohort] | State:
     """Check if sampling batch is ready and parse results."""
     if not state.sampling_batch_id:
         raise ValueError("No sampling batch ID found in state")
