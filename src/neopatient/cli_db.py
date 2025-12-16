@@ -1,7 +1,6 @@
 import argparse
 import asyncio
 import logging
-import sys
 from .database import create_database
 from .embed import create_embedder
 from .cli_common import add_embedder_args
