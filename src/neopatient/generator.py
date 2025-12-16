@@ -200,8 +200,8 @@ def _parse_generation_results(
 
     for custom_id, content in results.items():
         parts = custom_id.split("_")
-        patient_id = int(parts[3])
-        seg_idx = int(parts[5])  # segment_{seg_idx}
+        patient_id = int(parts[1])
+        seg_idx = int(parts[3])  # segment_{seg_idx}
         flat_generation_response = GenerationResponse.model_validate_json(content)
         if patient_id not in segment_data:
             segment_data[patient_id] = []

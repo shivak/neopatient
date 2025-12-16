@@ -132,7 +132,7 @@ async def _synthesize_cohorts(
         # Initialize new state
         current_state = State(stage=Stage.SAMPLING)
 
-    logger.info(f"Current state: {current_state}")
+    logger.info(f"Current stage: {current_state.stage}")
     match current_state.stage:
         case Stage.SAMPLING:
             return await _handle_sampling_stage(
