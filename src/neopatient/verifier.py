@@ -128,11 +128,9 @@ async def _handle_check_verification_stage(
         raise ValueError("No verification batch ID found in state")
 
     batch_id = state.verification_batch_id
-    is_done = await batch_llm.is_done(batch_id)
-    if not is_done:
-        return state
-
     results = await batch_llm.get(batch_id)
+    if results is None:
+        return state
     state.verifications = _parse_verification_results(results, logger)
 
     state.stage = Stage.FINALIZE

@@ -5,7 +5,15 @@ from typing import Any, Optional, Union, List
 from openai import AsyncOpenAI
 import jinja2
 import pandas as pd
-from .models import PatientRecipe, SamplingResponse, RecordType, State, CohortSpec, Cohort, Stage
+from .models import (
+    PatientRecipe,
+    SamplingResponse,
+    RecordType,
+    State,
+    CohortSpec,
+    Cohort,
+    Stage,
+)
 from .batch_llm import BatchLLM
 
 # Get the directory of the current file to construct template path
@@ -162,10 +170,9 @@ async def _handle_check_sampling_stage(
         raise ValueError("No sampling batch ID found in state")
 
     batch_id = state.sampling_batch_id
-    is_done = await batch_llm.is_done(batch_id)
-    if not is_done:
-        return state
     results = await batch_llm.get(batch_id)
+    if results is None:
+        return state
 
     sampled_recipes = {}
     for custom_id, content in results.items():

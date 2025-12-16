@@ -1,5 +1,6 @@
 """Batch LLM abstraction for different providers."""
 
+import io
 import json
 import logging
 import os
@@ -9,6 +10,7 @@ from abc import ABC, abstractmethod
 
 from openai import AsyncOpenAI
 from google import genai
+from google.genai import types
 
 
 logger = logging.getLogger(__name__)
@@ -25,13 +27,8 @@ class BatchLLM(ABC):
         pass
 
     @abstractmethod
-    async def is_done(self, batch_id: str) -> bool:
-        """Check if batch is completed. Returns True if done, False if still processing, raises RuntimeError if failed."""
-        pass
-
-    @abstractmethod
-    async def get(self, batch_id: str) -> dict[str, str]:
-        """Retrieve completed batch results."""
+    async def get(self, batch_id: str) -> dict[str, str] | None:
+        """Retrieve completed batch results. Returns a dict where keys are prompt IDs and values are JSON response strings, or None if the batch is still processing. Raises RuntimeError if the batch failed, was cancelled, or expired."""
         pass
 
 
@@ -67,20 +64,16 @@ class BatchOpenAI(BatchLLM):
             }
             requests.append(request)
 
-        jsonl_content = "\n".join(
-            json.dumps(request, default=str) for request in requests
+        jsonl_content = (
+            "\n".join(json.dumps(request, default=str) for request in requests) + "\n"
         )
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
-            f.write(jsonl_content + "\n")
-            temp_path = f.name
-
-        try:
-            with open(temp_path, "rb") as f:
-                file_response = await self.client.files.create(file=f, purpose="batch")
-            return file_response.id
-        finally:
-            os.unlink(temp_path)
+        jsonl_bytes = jsonl_content.encode("utf-8")
+        bytes_buffer = io.BytesIO(jsonl_bytes)
+        file_response = await self.client.files.create(
+            file=bytes_buffer, purpose="batch"
+        )
+        return file_response.id
 
     async def _download_batch_results(self, file_id: str) -> list[dict]:
         """Download and parse batch results from OpenAI."""
@@ -115,25 +108,21 @@ class BatchOpenAI(BatchLLM):
         )
         return batch_response.id
 
-    async def is_done(self, batch_id: str) -> bool:
-        """Check if OpenAI batch is completed."""
-        batch_status = await self.client.batches.retrieve(batch_id)
-        status = batch_status.status
+    async def get(self, batch_id: str) -> dict[str, str] | None:
+        """Retrieve OpenAI batch results."""
+        batch_info = await self.client.batches.retrieve(batch_id)
+        status = batch_info.status
 
         if status == "completed":
             logger.info(f"OpenAI batch {batch_id} status: completed")
-            return True
         elif status in ["failed", "expired", "cancelled"]:
             logger.error(f"OpenAI batch {batch_id} failed with status: {status}")
             raise RuntimeError(f"OpenAI batch {batch_id} failed with status: {status}")
         else:
             # Still processing (running, validating, etc.)
             logger.info(f"OpenAI batch {batch_id} status: {status} (still processing)")
-            return False
+            return None
 
-    async def get(self, batch_id: str) -> dict[str, str]:
-        """Retrieve OpenAI batch results."""
-        batch_info = await self.client.batches.retrieve(batch_id)
         if not hasattr(batch_info, "output_file_id") or not batch_info.output_file_id:
             logger.error(f"No output file for OpenAI batch {batch_id}")
             raise ValueError(f"No output file for batch {batch_id}")
@@ -161,30 +150,41 @@ class BatchGemini(BatchLLM):
     def __init__(self):
         self.client = genai.Client(api_key=os.getenv("OPENAI_API_KEY")).aio
 
+    async def _create_jsonl_file(self, jsonl_content: str) -> str:
+        """Upload JSONL content for Gemini batch API."""
+        jsonl_bytes = jsonl_content.encode("utf-8")
+        bytes_buffer = io.BytesIO(jsonl_bytes)
+        uploaded_file = await self.client.files.upload(
+            file=bytes_buffer,
+            config=genai.types.UploadFileConfig(mime_type="application/jsonl"),
+        )
+        return uploaded_file.name
+
     async def ask(
         self, prompts_by_id: dict[str, str], response_schema: dict, model: str
     ) -> str:
         """Submit Gemini batch requests."""
-        logger.info(
-            f"Submitting Gemini batch request: prompts={json.dumps(prompts_by_id)}, schema={json.dumps(response_schema)}, model={model}"
-        )
-        gemini_requests = []
+        requests = []
         for custom_id, prompt in prompts_by_id.items():
-            gemini_req = {
+            request = {
                 "key": custom_id,
                 "request": {
                     "contents": [{"parts": [{"text": prompt}]}],
-                    "config": {
+                    "generation_config": {
                         "response_mime_type": "application/json",
                         "response_json_schema": response_schema,
                     },
                 },
             }
-            gemini_requests.append(gemini_req)
+            requests.append(request)
+
+        jsonl_content = "\n".join(json.dumps(request) for request in requests) + "\n"
+        logger.debug(f"Uploading Gemini batch JSONL: {jsonl_content}")
+        input_file = await self._create_jsonl_file(jsonl_content)
 
         batch_job = await self.client.batches.create(
             model=model,
-            src=gemini_requests,
+            src=input_file,
         )
 
         logger.info(
@@ -192,35 +192,37 @@ class BatchGemini(BatchLLM):
         )
         return batch_job.name
 
-    async def is_done(self, batch_id: str) -> bool:
-        """Check if Gemini batch is completed."""
+    async def get(self, batch_id: str) -> dict[str, str] | None:
+        """Retrieve Gemini batch results."""
         batch_job = await self.client.batches.get(name=batch_id)
         state = batch_job.state
 
         # Gemini batch states
         if state == "JOB_STATE_SUCCEEDED":
             logger.info(f"Gemini batch {batch_id} status: succeeded")
-            return True
         elif state in ["JOB_STATE_FAILED", "JOB_STATE_CANCELLED", "JOB_STATE_EXPIRED"]:
             logger.error(f"Gemini batch {batch_id} failed with state: {state}")
             raise RuntimeError(f"Gemini batch {batch_id} failed with state: {state}")
         else:
             # Still processing (JOB_STATE_RUNNING, JOB_STATE_PENDING, etc.)
             logger.info(f"Gemini batch {batch_id} status: {state} (still processing)")
-            return False
+            return None
 
-    async def get(self, batch_id: str) -> dict[str, str]:
-        """Retrieve Gemini batch results."""
-        batch_job = await self.client.batches.get(name=batch_id)
-
-        # Gemini returns results inline, not as a file
         response_data = {}
 
-        if hasattr(batch_job, "results") and batch_job.results:
-            for i, result in enumerate(batch_job.results):
-                custom_id = getattr(result, "key", f"gemini_result_{i}")
-                content = result.text
-                response_data[custom_id] = content
+        if batch_job.dest and batch_job.dest.file_name:
+            file_content_bytes = await self.client.files.download(
+                file=batch_job.dest.file_name
+            )
+            file_content = file_content_bytes.decode("utf-8")
+            for line in file_content.split("\n"):
+                if line.strip():
+                    result = json.loads(line)
+                    custom_id = result["key"]
+                    content = result["response"]["candidates"][0]["content"]["parts"][
+                        0
+                    ]["text"]
+                    response_data[custom_id] = content
 
         logger.info(
             f"Retrieved results for Gemini batch {batch_id}: {len(response_data)} results"

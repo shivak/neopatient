@@ -178,11 +178,9 @@ async def _handle_check_generation_stage(
 
     batch_id = state.generation_batch_id
 
-    is_done = await batch_llm.is_done(batch_id)
-    if not is_done:
-        return state
-
     results = await batch_llm.get(batch_id)
+    if results is None:
+        return state
     state.generated_records = _parse_generation_results(
         results, state.sampled_recipes, logger
     )
