@@ -113,24 +113,6 @@ class BatchOpenAI(BatchLLM):
 
         return results
 
-    async def ask(self, prompts_by_id: dict[str, str], response_schema: dict) -> str:
-        """Submit OpenAI batch requests."""
-        logger.info(
-            f"Submitting OpenAI batch request: prompts={json.dumps(prompts_by_id)}, schema={json.dumps(response_schema)}, model={self.model}"
-        )
-        input_file_id = await self._create_jsonl_file(prompts_by_id, response_schema)
-
-        batch_response = await self.client.batches.create(
-            input_file_id=input_file_id,
-            endpoint="/v1/chat/completions",
-            completion_window="24h",
-        )
-
-        logger.info(
-            f"Submitted OpenAI batch {batch_response.id} with {len(prompts_by_id)} prompts using model {self.model}"
-        )
-        return batch_response.id
-
     async def get(self, batch_id: str) -> dict[str, str] | None:
         """Retrieve OpenAI batch results."""
         await self._wait_for_limiter()
