@@ -106,11 +106,8 @@ async def _handle_sampling_stage(
     batch_llm: BatchLLM,
     state: State,
     cohort_specs: list[CohortSpec],
-    sampler: str,
-    generator: str,
     chroma_db,
     embedder,
-    verifier: str,
     logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Sample individual patient recipes for each cohort using batch processing."""
@@ -147,7 +144,7 @@ async def _handle_sampling_stage(
 
     # Submit batch sampling request
     schema = SamplingResponse.model_json_schema()
-    batch_id = await batch_llm.ask(prompts_by_id, schema, sampler)
+    batch_id = await batch_llm.ask(prompts_by_id, schema)
     state.sampling_batch_id = batch_id
     state.stage = Stage.CHECK_SAMPLING
 
@@ -158,11 +155,8 @@ async def _handle_check_sampling_stage(
     batch_llm: BatchLLM,
     state: State,
     cohort_specs: list[CohortSpec],
-    sampler: str,
-    generator: str,
     chroma_db,
     embedder,
-    verifier: str,
     logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Check if sampling batch is ready and parse results."""

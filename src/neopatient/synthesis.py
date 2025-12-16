@@ -1,7 +1,5 @@
 import json
 import logging
-import os
-import time
 
 import pathlib
 from typing import List, Union
@@ -10,7 +8,7 @@ from openai import AsyncOpenAI
 from chromadb.api import ClientAPI
 from .matcher import code_patient
 from .database import resolve_chroma_client
-from .embed import create_embedder
+from .embed import Embed, create_embedder
 from .models import (
     State,
     Patient,
@@ -19,7 +17,7 @@ from .models import (
     RecordType,
     Stage,
 )
-from .batch_llm import create_batch_llm
+from .batch_llm import BatchLLM, create_batch_llm
 from .generator import (
     generate_patient,
     _handle_generation_stage,
@@ -36,6 +34,28 @@ from .verifier import (
     _start_verification_stage,
     _handle_check_verification_stage,
 )
+
+
+def _synthesis_setup(
+    chroma_db: ClientAPI | pathlib.Path | None,
+    embedder_model: str | None,
+    embedder_batch_size: int | None,
+    embedder_args: dict | None,
+    embedder_base_url: str | None,
+    sampler: str,
+    generator: str,
+    verifier: str,
+    poll_interval: int | None,
+) -> tuple[ClientAPI, Embed, BatchLLM, BatchLLM, BatchLLM]:
+    """Set up shared dependencies for synthesis functions."""
+    chroma_db = resolve_chroma_client(chroma_db)
+    embedder = create_embedder(
+        embedder_model, embedder_batch_size, embedder_args, embedder_base_url
+    )
+    sampler_llm = create_batch_llm(sampler, poll_interval)
+    generator_llm = create_batch_llm(generator, poll_interval)
+    verifier_llm = create_batch_llm(verifier, poll_interval)
+    return chroma_db, embedder, sampler_llm, generator_llm, verifier_llm
 
 
 async def synthesize_patient(
@@ -113,17 +133,14 @@ async def synthesize_patient(
 
 async def _synthesize_cohorts(
     cohort_specs: list[CohortSpec],
-    chroma_db: ClientAPI,
+    chroma_db,
     embedder,
+    sampler: BatchLLM,
+    generator: BatchLLM,
+    verifier: BatchLLM,
     state: State | None = None,
-    generator: str = "gpt-5",
-    verifier: str = "gpt-5-nano",
-    sampler: str = "gpt-5",
 ) -> Union[List[Cohort], State]:
     logger = logging.getLogger(__name__)
-
-    # Create batch LLM instance
-    batch_llm = create_batch_llm(generator)
 
     # If resuming from state, use existing state
     if state is not None:
@@ -136,67 +153,55 @@ async def _synthesize_cohorts(
     match current_state.stage:
         case Stage.SAMPLING:
             return await _handle_sampling_stage(
-                batch_llm,
+                sampler,
                 current_state,
                 cohort_specs,
-                sampler,
-                generator,
                 chroma_db,
                 embedder,
-                verifier,
                 logger,
             )
         case Stage.CHECK_SAMPLING:
             return await _handle_check_sampling_stage(
-                batch_llm,
+                sampler,
                 current_state,
                 cohort_specs,
-                sampler,
-                generator,
                 chroma_db,
                 embedder,
-                verifier,
                 logger,
             )
         case Stage.GENERATION:
             return await _handle_generation_stage(
-                batch_llm,
+                generator,
                 current_state,
                 cohort_specs,
-                generator,
                 chroma_db,
                 embedder,
-                verifier,
                 logger,
             )
         case Stage.CHECK_GENERATION:
             return await _handle_check_generation_stage(
-                batch_llm,
+                generator,
                 current_state,
                 cohort_specs,
                 chroma_db,
-                generator,
                 embedder,
-                verifier,
                 logger,
             )
         case Stage.MATCHING:
             return await _handle_matching_stage(
-                batch_llm,
                 current_state,
                 chroma_db,
                 embedder,
                 cohort_specs,
-                verifier,
                 logger,
             )
         case Stage.VERIFICATION:
             return await _start_verification_stage(
-                batch_llm, current_state, cohort_specs, verifier, logger
+                verifier, current_state, cohort_specs, logger
             )
         case Stage.CHECK_VERIFICATION:
             return await _handle_check_verification_stage(
-                batch_llm, current_state, cohort_specs, verifier, logger
+                verifier, current_state, cohort_specs, logger
             )
         case Stage.FINALIZE:
             return _handle_finalize_stage(current_state, cohort_specs)
@@ -215,12 +220,8 @@ async def synthesize_cohorts(
     generator: str = "gpt-5",
     verifier: str = "gpt-5-nano",
     sampler: str = "gpt-5",
+    poll_interval: int | None = None,
 ) -> Union[List[Cohort], State]:
-    logger = logging.getLogger(__name__)
-
-    # Create batch LLM instance
-    batch_llm = create_batch_llm(generator)
-
     """
     Generates synthetic patient records in batch using OpenAI's batch API.
 
@@ -243,19 +244,33 @@ async def synthesize_cohorts(
         generator: Model name for generation (default: "gpt-5")
         verifier: Model name for verification (default: "gpt-5-nano")
         sampler: Model name for sampling (default: "gpt-5")
+        poll_interval: Optional poll interval for rate limiting batch checks
 
     Returns:
         Either:
         - List of cohorts, where each cohort is a list of patient records
         - State dictionary for resuming if batch is not ready yet
     """
-    chroma_db = resolve_chroma_client(chroma_db)
-    embedder = create_embedder(
-        embedder_model, embedder_batch_size, embedder_args, embedder_base_url
+    chroma_db, embedder, sampler_llm, generator_llm, verifier_llm = _synthesis_setup(
+        chroma_db,
+        embedder_model,
+        embedder_batch_size,
+        embedder_args,
+        embedder_base_url,
+        sampler,
+        generator,
+        verifier,
+        poll_interval,
     )
 
     return await _synthesize_cohorts(
-        cohort_specs, chroma_db, embedder, state, generator, verifier, sampler
+        cohort_specs,
+        chroma_db,
+        embedder,
+        sampler_llm,
+        generator_llm,
+        verifier_llm,
+        state,
     )
 
 
@@ -290,9 +305,16 @@ async def synthesize_cohorts_with_state_file(
         List of cohorts (each cohort is list of Patient tables)
     """
     # Resolve dependencies once outside the loop
-    chroma_db = resolve_chroma_client(chroma_db)
-    embedder = create_embedder(
-        embedder_model, embedder_batch_size, embedder_args, embedder_base_url
+    chroma_db, embedder, sampler_llm, generator_llm, verifier_llm = _synthesis_setup(
+        chroma_db,
+        embedder_model,
+        embedder_batch_size,
+        embedder_args,
+        embedder_base_url,
+        sampler,
+        generator,
+        verifier,
+        poll_interval,
     )
 
     state = None
@@ -305,9 +327,9 @@ async def synthesize_cohorts_with_state_file(
             cohort_specs=cohort_specs,
             chroma_db=chroma_db,
             embedder=embedder,
-            generator=generator,
-            verifier=verifier,
-            sampler=sampler,
+            sampler=sampler_llm,
+            generator=generator_llm,
+            verifier=verifier_llm,
             state=state,
         )
         if isinstance(result, list):
@@ -317,7 +339,6 @@ async def synthesize_cohorts_with_state_file(
                 # Serialize to string first to avoid partial writes if serialization fails
                 state_json = json.dumps(result.model_dump(), default=str)
                 f.write(state_json)
-            time.sleep(poll_interval)
             state = result
 
 

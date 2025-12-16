@@ -128,10 +128,8 @@ async def _handle_generation_stage(
     batch_llm: BatchLLM,
     state: State,
     cohort_specs: list[CohortSpec],
-    generator: str,
     chroma_db,
     embedder,
-    verifier: str,
     logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Handle the initial generation stage using batch API."""
@@ -154,7 +152,7 @@ async def _handle_generation_stage(
     # Submit batch request
     try:
         schema = GenerationResponse.model_json_schema()
-        batch_id = await batch_llm.ask(prompts_by_id, schema, generator)
+        batch_id = await batch_llm.ask(prompts_by_id, schema)
         state.generation_batch_id = batch_id
         state.stage = Stage.CHECK_GENERATION
         return state
@@ -167,9 +165,7 @@ async def _handle_check_generation_stage(
     state: State,
     cohort_specs: list[CohortSpec],
     chroma_db,
-    generator: str,
     embedder,
-    verifier: str,
     logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Check if generation batch is ready and start verification if so."""

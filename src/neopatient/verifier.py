@@ -87,7 +87,6 @@ async def _start_verification_stage(
     batch_llm: BatchLLM,
     state: State,
     cohort_specs: list[CohortSpec],
-    verifier: str,
     logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Start verification stage using batch API."""
@@ -108,7 +107,7 @@ async def _start_verification_stage(
     # Submit verification batch
     try:
         schema = VerificationResponse.model_json_schema()
-        batch_id = await batch_llm.ask(prompts_by_id, schema, verifier)
+        batch_id = await batch_llm.ask(prompts_by_id, schema)
         state.verification_batch_id = batch_id
         state.stage = Stage.CHECK_VERIFICATION
         return state
@@ -120,7 +119,6 @@ async def _handle_check_verification_stage(
     batch_llm: BatchLLM,
     state: State,
     cohort_specs: list[CohortSpec],
-    verifier: str,
     logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Check if verification batch is ready."""

@@ -4,13 +4,12 @@ import io
 import json
 import logging
 import os
-import tempfile
 from abc import ABC, abstractmethod
 
 
+from limiter import Limiter
 from openai import AsyncOpenAI
 from google import genai
-from google.genai import types
 
 
 logger = logging.getLogger(__name__)
@@ -19,10 +18,22 @@ logger = logging.getLogger(__name__)
 class BatchLLM(ABC):
     """Abstract base class for batch LLM operations."""
 
+    def __init__(self, model: str, poll_interval: int | None = None):
+        self.model = model
+        if poll_interval is not None:
+            self.limiter = Limiter(
+                rate=1, capacity=poll_interval, consume=poll_interval
+            )
+        else:
+            self.limiter = None
+
+    async def _wait_for_limiter(self):
+        if self.limiter:
+            async with self.limiter:
+                pass
+
     @abstractmethod
-    async def ask(
-        self, prompts_by_id: dict[str, str], response_schema: dict, model: str
-    ) -> str:
+    async def ask(self, prompts_by_id: dict[str, str], response_schema: dict) -> str:
         """Submit batch requests and return batch ID."""
         pass
 
@@ -35,11 +46,12 @@ class BatchLLM(ABC):
 class BatchOpenAI(BatchLLM):
     """OpenAI batch implementation."""
 
-    def __init__(self):
+    def __init__(self, model: str, poll_interval: int | None = None):
+        super().__init__(model, poll_interval)
         self.client = AsyncOpenAI()
 
     async def _create_jsonl_file(
-        self, prompts_by_id: dict[str, str], response_schema: dict, model: str
+        self, prompts_by_id: dict[str, str], response_schema: dict
     ) -> str:
         """Create JSONL file for OpenAI batch API."""
         requests = []
@@ -49,7 +61,7 @@ class BatchOpenAI(BatchLLM):
                 "method": "POST",
                 "url": "/v1/chat/completions",
                 "body": {
-                    "model": model,
+                    "model": self.model,
                     "messages": [{"role": "user", "content": prompt}],
                     "response_format": {
                         "type": "json_schema",
@@ -75,6 +87,21 @@ class BatchOpenAI(BatchLLM):
         )
         return file_response.id
 
+    async def ask(self, prompts_by_id: dict[str, str], response_schema: dict) -> str:
+        """Submit OpenAI batch requests."""
+        logger.info(
+            f"Submitting OpenAI batch request: prompts={json.dumps(prompts_by_id)}, schema={json.dumps(response_schema)}, model={self.model}"
+        )
+        input_file_id = await self._create_jsonl_file(prompts_by_id, response_schema)
+
+        batch_response = await self.client.batches.create(
+            input_file_id=input_file_id,
+            endpoint="/v1/chat/completions",
+            completion_window="24h",
+        )
+
+        return batch_response.id
+
     async def _download_batch_results(self, file_id: str) -> list[dict]:
         """Download and parse batch results from OpenAI."""
         file_content = await self.client.files.content(file_id)
@@ -86,16 +113,12 @@ class BatchOpenAI(BatchLLM):
 
         return results
 
-    async def ask(
-        self, prompts_by_id: dict[str, str], response_schema: dict, model: str
-    ) -> str:
+    async def ask(self, prompts_by_id: dict[str, str], response_schema: dict) -> str:
         """Submit OpenAI batch requests."""
         logger.info(
-            f"Submitting OpenAI batch request: prompts={json.dumps(prompts_by_id)}, schema={json.dumps(response_schema)}, model={model}"
+            f"Submitting OpenAI batch request: prompts={json.dumps(prompts_by_id)}, schema={json.dumps(response_schema)}, model={self.model}"
         )
-        input_file_id = await self._create_jsonl_file(
-            prompts_by_id, response_schema, model
-        )
+        input_file_id = await self._create_jsonl_file(prompts_by_id, response_schema)
 
         batch_response = await self.client.batches.create(
             input_file_id=input_file_id,
@@ -104,12 +127,13 @@ class BatchOpenAI(BatchLLM):
         )
 
         logger.info(
-            f"Submitted OpenAI batch {batch_response.id} with {len(prompts_by_id)} prompts using model {model}"
+            f"Submitted OpenAI batch {batch_response.id} with {len(prompts_by_id)} prompts using model {self.model}"
         )
         return batch_response.id
 
     async def get(self, batch_id: str) -> dict[str, str] | None:
         """Retrieve OpenAI batch results."""
+        await self._wait_for_limiter()
         batch_info = await self.client.batches.retrieve(batch_id)
         status = batch_info.status
 
@@ -141,13 +165,15 @@ class BatchOpenAI(BatchLLM):
         logger.info(
             f"Retrieved results for OpenAI batch {batch_id}: {len(response_data)} results"
         )
+        logger.debug(response_data)
         return response_data
 
 
 class BatchGemini(BatchLLM):
     """Gemini batch implementation."""
 
-    def __init__(self):
+    def __init__(self, model: str, poll_interval: int | None = None):
+        super().__init__(model, poll_interval)
         self.client = genai.Client(api_key=os.getenv("OPENAI_API_KEY")).aio
 
     async def _create_jsonl_file(self, jsonl_content: str) -> str:
@@ -160,9 +186,7 @@ class BatchGemini(BatchLLM):
         )
         return uploaded_file.name
 
-    async def ask(
-        self, prompts_by_id: dict[str, str], response_schema: dict, model: str
-    ) -> str:
+    async def ask(self, prompts_by_id: dict[str, str], response_schema: dict) -> str:
         """Submit Gemini batch requests."""
         requests = []
         for custom_id, prompt in prompts_by_id.items():
@@ -183,17 +207,18 @@ class BatchGemini(BatchLLM):
         input_file = await self._create_jsonl_file(jsonl_content)
 
         batch_job = await self.client.batches.create(
-            model=model,
+            model=self.model,
             src=input_file,
         )
 
         logger.info(
-            f"Submitted Gemini batch {batch_job.name} with {len(prompts_by_id)} prompts using model {model}"
+            f"Submitted Gemini batch {batch_job.name} with {len(prompts_by_id)} prompts using model {self.model}"
         )
         return batch_job.name
 
     async def get(self, batch_id: str) -> dict[str, str] | None:
         """Retrieve Gemini batch results."""
+        await self._wait_for_limiter()
         batch_job = await self.client.batches.get(name=batch_id)
         state = batch_job.state
 
@@ -230,9 +255,9 @@ class BatchGemini(BatchLLM):
         return response_data
 
 
-def create_batch_llm(model: str) -> BatchLLM:
+def create_batch_llm(model: str, poll_interval: int | None = None) -> BatchLLM:
     """Factory function to create appropriate BatchLLM implementation."""
     if "gemini" in model.lower():
-        return BatchGemini()
+        return BatchGemini(model, poll_interval)
     else:
-        return BatchOpenAI()
+        return BatchOpenAI(model, poll_interval)

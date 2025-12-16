@@ -223,12 +223,10 @@ async def code_cohort(
 
 
 async def _handle_matching_stage(
-    batch_llm,
     state: State,
     chroma_db,
     embedder,
     cohort_specs,
-    verifier,
     logger: logging.Logger,
 ) -> Union[List[Cohort], State]:
     """Handle code matching stage and start verification."""
