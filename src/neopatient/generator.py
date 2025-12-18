@@ -14,6 +14,7 @@ from .models import (
     CohortSpec,
     Stage,
     Cohort,
+    get_time_type,
 )
 from .batch_llm import BatchLLM
 
@@ -40,6 +41,7 @@ def create_generation_prompts(
     Returns list of (patient_id, prompt) tuples.
     """
     allowed_code_systems = CodeSystem.allowed_in(record_type)
+    is_datetime = record_type == RecordType.EHR_INPATIENT
 
     prompts = []
     for patient_id, recipe in recipes.items():
@@ -56,6 +58,7 @@ def create_generation_prompts(
 
             prompt = GENERATION_TEMPLATE.render(
                 record_type=record_type.value,
+                is_datetime=is_datetime,
                 start_date=formatted_start,
                 end_date=formatted_end,
                 recipe=recipe,
@@ -90,6 +93,8 @@ async def generate_patient(
     """
     logger = logging.getLogger(__name__)
 
+    time_type = get_time_type(record_type)
+
     # Generate each segment and then concatenate into uncoded record
     prompts = create_generation_prompts(record_type, {patient_id: recipe})
     segment_prompts = [prompt for pid, prompt in prompts]
@@ -105,7 +110,7 @@ async def generate_patient(
                 "json_schema": {
                     "name": "generation_response",
                     "strict": True,
-                    "schema": GenerationResponse.model_json_schema(),
+                    "schema": GenerationResponse[time_type].model_json_schema(),
                 },
             },
             temperature=0.7,
@@ -114,7 +119,9 @@ async def generate_patient(
         if content is None:
             raise ValueError("No content in generation response")
         logger.info(f"Generation response for segment {seg_idx}: {content}")
-        flat_generation_response = GenerationResponse.model_validate_json(content)
+        flat_generation_response = GenerationResponse[time_type].model_validate_json(
+            content
+        )
         segment_records = flat_generation_response.records.unflatten()
         # Combine records, assuming no overlapping times
         combined_records.update(segment_records.root)
@@ -174,8 +181,13 @@ async def _handle_check_generation_stage(
     results = await batch_llm.get(batch_id)
     if results is None:
         return state
+    patient_record_types = {}
+    for cohort_idx, cohort_patient_ids in enumerate(state.sampled_ids):
+        spec = cohort_specs[cohort_idx]
+        for pid in cohort_patient_ids:
+            patient_record_types[pid] = spec.record_type
     good_records, bad_segments = _parse_generation_results(
-        results, state.sampled_recipes
+        results, state.sampled_recipes, patient_record_types
     )
     state.generated_records = good_records
     state.bad_generated_segments = bad_segments
@@ -187,6 +199,7 @@ async def _handle_check_generation_stage(
 def _parse_generation_results(
     results: dict[str, str],
     sampled_recipes: dict[int, PatientRecipe],
+    patient_record_types: dict[int, RecordType],
 ) -> tuple[dict[int, UncodedPatient], dict[int, dict[int, str]]]:
     """Parse generation results and organize by patient, combining segments."""
     logger = logging.getLogger(__name__)
@@ -201,7 +214,10 @@ def _parse_generation_results(
         seg_idx = int(parts[3])  # segment_{seg_idx}
 
         try:
-            flat_generation_response = GenerationResponse.model_validate_json(content)
+            time_type = get_time_type(patient_record_types[patient_id])
+            flat_generation_response = GenerationResponse[
+                time_type
+            ].model_validate_json(content)
             if patient_id not in segment_data:
                 segment_data[patient_id] = []
             segment_data[patient_id].append(

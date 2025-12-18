@@ -4,13 +4,13 @@ Overall patient description: {{recipe.description}}
 
 Segment-specific description: {{segment.description}}
 
-* your output should be a JSON object: {"records": {time: [[code_system, code_desc] or [code_system, code_desc, numeric_value, unit], ...], ...}}
+* your output should be a JSON object: {"records": {time: [[code_system, code_desc] or [code_system, code_desc, [numeric_value, unit]], ...], ...}}
 * generate events sequentially by time for this segment only. these should be specific events that would actually be coded in a typical {% if record_type == 'claims' %} claims record {% else %} electronic health record {% endif %}
-* time: {% if record_type in ['claims', 'ehr-outpatient'] %}use strict date precision (YYYY-MM-DD){% else %}use strict datetime precision (YYYY-MM-DDTHH:MM){% endif %}. If the descriptions have any strict constraints about dates, make sure to heed them. 
+* time: {% if is_datetime %}use strict datetime precision (YYYY-MM-DDTHH:MM){% else %}use strict date precision (YYYY-MM-DD){% endif %}. If the descriptions have any strict constraints about dates, make sure to heed them. 
 * code_system: the vocabulary system for this code (must be one of: {{ allowed_code_systems | join(', ') }})
 * code_desc: brief textual description of the measurement/event (not the code itself). focus on concepts, diagnoses, observations, procedures, prescriptions, etc. that would actually appear in a health record.
 * for non-numeric events: output [code_system, code_desc]
-* for numeric events: output [code_system, code_desc, numeric_value, unit] (unit is required when numeric_value is present). {% if loinc_allowed and not (record_type == 'claims') %}loinc codes should always be accompanied by measurements in this way.{% endif %}
+* for numeric events: output [code_system, code_desc, [numeric_value, unit]] (unit is required when numeric_value is present). {% if loinc_allowed and not (record_type == 'claims') %}loinc codes should always be accompanied by measurements in this way.{% endif %}
 
 * the segment should span from {{start_date}} to {{end_date}}
 * approximately {{segment.num_times * segment.avg_codes_per_time}} total events for this segment (CRUCIAL! do *not* generate fewer)
@@ -24,7 +24,7 @@ Segment-specific description: {{segment.description}}
   "records": {
      "2025-10-05": [
         ["cpt", "Office or other outpatient visit for the evaluation and management of an established patient"],
-        ["ndc", "Lisinopril 10 MG Oral Tablet", 1.0, "tablet"],
+        ["ndc", "Lisinopril 10 MG Oral Tablet", [1.0, "tablet"]],
         ["icd10", "Essential (primary) hypertension"]
       ]
    }
@@ -33,8 +33,8 @@ Segment-specific description: {{segment.description}}
 {
   "records": {
      "2025-10-05T09:30": [
-        ["loinc", "Platelets [#/volume] in Blood", 4500.0, "/uL"],
-        ["loinc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
+        ["loinc", "Platelets [#/volume] in Blood", [4500.0, "/uL"]],
+        ["loinc", "Hemoglobin [Mass/volume] in Blood", [13.5, "g/dL"]],
         ["icd10", "Essential (primary) hypertension"]
       ]
    }
@@ -43,8 +43,8 @@ Segment-specific description: {{segment.description}}
 {
   "records": {
      "2025-10-05": [
-        ["loinc", "Platelets [#/volume] in Blood", 4500.0, "/uL"],
-        ["loinc", "Hemoglobin [Mass/volume] in Blood", 13.5, "g/dL"],
+        ["loinc", "Platelets [#/volume] in Blood", [4500.0, "/uL"]],
+        ["loinc", "Hemoglobin [Mass/volume] in Blood", [13.5, "g/dL"]],
         ["icd10", "Essential (primary) hypertension"]
       ]
    }

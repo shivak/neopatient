@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from typing import Annotated
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, date
 from pydantic import (
     BaseModel,
     RootModel,
     Field,
-    model_validator,
     computed_field,
     PlainSerializer,
     PlainValidator,
@@ -71,6 +70,13 @@ class RecordType(str, Enum):
     CLAIMS = "claims"
 
 
+def get_time_type(record_type: RecordType) -> type[date] | type[datetime]:
+    if record_type == RecordType.EHR_INPATIENT:
+        return datetime
+    else:  # EHR_OUTPATIENT or CLAIMS
+        return date
+
+
 class Stage(str, Enum):
     """Enumeration of synthesis stages."""
 
@@ -111,11 +117,14 @@ class UncodedPatient(RootModel[dict[str, list[Event]]]):
 
 
 # FlatEvent is a union to represent events without nulls: 2-tuple for non-numeric events,
-# 4-tuple for numeric events (ensuring unit is always present with numeric_value).
-FlatEvent = tuple[CodeSystem, str] | tuple[CodeSystem, str, float, str]
+# 3-tuple for numeric events with Measurement tuple.
+Measurement = tuple[float, str]
+FlatEvent = tuple[CodeSystem, str] | tuple[CodeSystem, str, Measurement]
 
 
-class FlatUncodedPatient(RootModel[dict[str, list[FlatEvent]]]):
+class FlatUncodedPatient[Time: (date, datetime)](
+    RootModel[dict[Time, list[FlatEvent]]]
+):
     """Flat representation of uncoded patient records (events as tuples)."""
 
     def unflatten(self) -> UncodedPatient:
@@ -128,8 +137,9 @@ class FlatUncodedPatient(RootModel[dict[str, list[FlatEvent]]]):
                     code_system, code_desc = e
                     numeric_value = None
                     unit = None
-                elif len(e) == 4:
-                    code_system, code_desc, numeric_value, unit = e
+                elif len(e) == 3:
+                    code_system, code_desc, measurement = e
+                    numeric_value, unit = measurement
                 else:
                     raise ValueError(f"Invalid event tuple length: {len(e)}")
                 event_list.append(
@@ -140,14 +150,16 @@ class FlatUncodedPatient(RootModel[dict[str, list[FlatEvent]]]):
                         unit=unit,
                     )
                 )
-            records[time] = event_list
+            # Convert Time to str for UncodedPatient
+            time_str = time.isoformat()
+            records[time_str] = event_list
         return UncodedPatient(records)
 
 
-class GenerationResponse(BaseModel):
+class GenerationResponse[Time: (date, datetime)](BaseModel):
     """Response from generation LLM (events as tuples)."""
 
-    records: FlatUncodedPatient = Field(
+    records: FlatUncodedPatient[Time] = Field(
         description="The generated patient records (flat)"
     )
 
