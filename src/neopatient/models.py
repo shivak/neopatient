@@ -122,7 +122,7 @@ Measurement = tuple[float, str]
 FlatEvent = tuple[CodeSystem, str] | tuple[CodeSystem, str, Measurement]
 
 
-class FlatUncodedPatient[Time: (date, datetime)](
+class FlatUncodedSegment[Time: (date, datetime)](
     RootModel[dict[Time, list[FlatEvent]]]
 ):
     """Flat representation of uncoded patient records (events as tuples)."""
@@ -154,14 +154,6 @@ class FlatUncodedPatient[Time: (date, datetime)](
             time_str = time.isoformat()
             records[time_str] = event_list
         return UncodedPatient(records)
-
-
-class GenerationResponse[Time: (date, datetime)](BaseModel):
-    """Response from generation LLM (events as tuples)."""
-
-    records: FlatUncodedPatient[Time] = Field(
-        description="The generated patient records (flat)"
-    )
 
 
 def _serialize_table(table: pa.Table, compression: str = "zstd") -> str:
@@ -205,7 +197,7 @@ class VerificationResponse(BaseModel):
     criticism: str
 
 
-class Segment(BaseModel):
+class SegmentRecipe(BaseModel):
     """A temporal segment of a patient's medical history."""
 
     start_date: datetime
@@ -230,7 +222,7 @@ class PatientRecipe(BaseModel):
     gender: str | None = None
     race: str | None = None
     ethnicity: str | None = None
-    segments: list[Segment]
+    segments: list[SegmentRecipe]
 
     @computed_field
     def start_date(self) -> datetime:

@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import datetime
 
 from openai import AsyncOpenAI
 import jinja2
@@ -7,7 +8,7 @@ import jinja2
 from .models import (
     UncodedPatient,
     PatientRecipe,
-    GenerationResponse,
+    FlatUncodedSegment,
     CodeSystem,
     RecordType,
     State,
@@ -110,7 +111,7 @@ async def generate_patient(
                 "json_schema": {
                     "name": "generation_response",
                     "strict": True,
-                    "schema": GenerationResponse[time_type].model_json_schema(),
+                    "schema": FlatUncodedSegment[time_type].model_json_schema(),
                 },
             },
             temperature=0.7,
@@ -119,10 +120,10 @@ async def generate_patient(
         if content is None:
             raise ValueError("No content in generation response")
         logger.info(f"Generation response for segment {seg_idx}: {content}")
-        flat_generation_response = GenerationResponse[time_type].model_validate_json(
+        flat_uncoded_segment = FlatUncodedSegment[time_type].model_validate_json(
             content
         )
-        segment_records = flat_generation_response.records.unflatten()
+        segment_records = flat_uncoded_segment.unflatten()
         # Combine records, assuming no overlapping times
         combined_records.update(segment_records.root)
     record_data = UncodedPatient(combined_records)
@@ -156,7 +157,8 @@ async def _handle_generation_stage(
 
     # Submit batch request
     try:
-        schema = GenerationResponse.model_json_schema()
+        # Use datetime as representative for schema (since mixed, but Pydantic handles)
+        schema = FlatUncodedSegment[datetime].model_json_schema()
         batch_id = await batch_llm.ask(prompts_by_id, schema)
         state.generation_batch_id = batch_id
         state.stage = Stage.CHECK_GENERATION
@@ -215,14 +217,12 @@ def _parse_generation_results(
 
         try:
             time_type = get_time_type(patient_record_types[patient_id])
-            flat_generation_response = GenerationResponse[
-                time_type
-            ].model_validate_json(content)
+            flat_uncoded_segment = FlatUncodedSegment[time_type].model_validate_json(
+                content
+            )
             if patient_id not in segment_data:
                 segment_data[patient_id] = []
-            segment_data[patient_id].append(
-                (seg_idx, flat_generation_response.records.unflatten())
-            )
+            segment_data[patient_id].append((seg_idx, flat_uncoded_segment.unflatten()))
         except Exception as e:
             logger.warning(f"Bad segment: {e}")
             failed_patients.add(patient_id)
