@@ -234,7 +234,8 @@ async def _handle_matching_stage(
         state.generated_records, state.sampled_recipes, chroma_client, embedder
     )
     state.coded_cohorts = [
-        [matched[pid] for pid in cohort_ids] for cohort_ids in state.sampled_ids
+        [matched[pid] for pid in cohort_ids if pid in matched]
+        for cohort_ids in state.sampled_ids
     ]
 
     # Start verification stage

@@ -174,7 +174,11 @@ async def _handle_check_generation_stage(
     results = await batch_llm.get(batch_id)
     if results is None:
         return state
-    state.generated_records = _parse_generation_results(results, state.sampled_recipes)
+    good_records, bad_segments = _parse_generation_results(
+        results, state.sampled_recipes
+    )
+    state.generated_records = good_records
+    state.bad_generated_segments = bad_segments
 
     state.stage = Stage.MATCHING
     return state
@@ -183,27 +187,41 @@ async def _handle_check_generation_stage(
 def _parse_generation_results(
     results: dict[str, str],
     sampled_recipes: dict[int, PatientRecipe],
-) -> dict[int, UncodedPatient]:
+) -> tuple[dict[int, UncodedPatient], dict[int, dict[int, str]]]:
     """Parse generation results and organize by patient, combining segments."""
+    logger = logging.getLogger(__name__)
     cohort_records = {}
     segment_data = {}  # patient_id -> list of (seg_idx, records)
+    failed_patients = set()
+    bad_segments = {}  # patient_id -> {seg_idx: raw_content}
 
     for custom_id, content in results.items():
         parts = custom_id.split("_")
         patient_id = int(parts[1])
         seg_idx = int(parts[3])  # segment_{seg_idx}
-        flat_generation_response = GenerationResponse.model_validate_json(content)
-        if patient_id not in segment_data:
-            segment_data[patient_id] = []
-        segment_data[patient_id].append(
-            (seg_idx, flat_generation_response.records.unflatten())
-        )
 
-    # Combine segments for each patient
+        try:
+            flat_generation_response = GenerationResponse.model_validate_json(content)
+            if patient_id not in segment_data:
+                segment_data[patient_id] = []
+            segment_data[patient_id].append(
+                (seg_idx, flat_generation_response.records.unflatten())
+            )
+        except Exception as e:
+            logger.warning(f"Bad segment: {e}")
+            failed_patients.add(patient_id)
+            if patient_id not in bad_segments:
+                bad_segments[patient_id] = {}
+            bad_segments[patient_id][seg_idx] = content
+
+    # Combine segments for each patient not in failed_patients
     for patient_id, segments in segment_data.items():
-        combined_records = {}
-        for seg_idx, records in sorted(segments, key=lambda x: x[0]):  # sort by seg_idx
-            combined_records.update(records.root)
-        cohort_records[patient_id] = UncodedPatient(combined_records)
+        if patient_id not in failed_patients:
+            combined_records = {}
+            for seg_idx, records in sorted(
+                segments, key=lambda x: x[0]
+            ):  # sort by seg_idx
+                combined_records.update(records.root)
+            cohort_records[patient_id] = UncodedPatient(combined_records)
 
-    return cohort_records
+    return cohort_records, bad_segments

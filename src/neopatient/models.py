@@ -202,11 +202,12 @@ class Segment(BaseModel):
     avg_codes_per_time: float
     description: str
 
-    @model_validator(mode="after")
-    def validate_dates(self):
-        if self.start_date >= self.end_date:
-            raise ValueError("start_date must be before end_date")
-        return self
+
+#    @model_validator(mode="after")
+#    def validate_dates(self):
+#        if self.start_date >= self.end_date:
+#            raise ValueError("start_date must be before end_date")
+#        return self
 
 
 class PatientRecipe(BaseModel):
@@ -268,6 +269,7 @@ class State(BaseModel):
     sampling_batch_id: str | None = None
     generation_batch_id: str | None = None
     generated_records: dict[int, UncodedPatient] = Field(default_factory=dict)
+    bad_generated_segments: dict[int, dict[int, str]] = Field(default_factory=dict)
     verification_batch_id: str | None = None
     verifications: dict[int, VerificationResponse] = Field(default_factory=dict)
     coded_cohorts: list[Cohort] = Field(default_factory=list)
