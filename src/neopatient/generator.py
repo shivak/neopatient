@@ -20,6 +20,9 @@ from .models import (
 from .batch_llm import BatchLLM
 
 
+logger = logging.getLogger(__name__)
+
+
 # Get the directory of the current file to construct template path
 _current_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(os.path.dirname(_current_dir))
@@ -92,7 +95,6 @@ async def generate_patient(
     Returns:
         UncodedPatient
     """
-    logger = logging.getLogger(__name__)
 
     time_type = get_time_type(record_type)
 
@@ -204,7 +206,6 @@ def _parse_generation_results(
     patient_record_types: dict[int, RecordType],
 ) -> tuple[dict[int, UncodedPatient], dict[int, dict[int, str]]]:
     """Parse generation results and organize by patient, combining segments."""
-    logger = logging.getLogger(__name__)
     cohort_records = {}
     segment_data = {}  # patient_id -> list of (seg_idx, records)
     failed_patients = set()

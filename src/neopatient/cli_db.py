@@ -7,6 +7,9 @@ from .embed import create_embedder
 from .cli_common import add_embedder_args
 
 
+logger = logging.getLogger(__name__)
+
+
 async def _main():
     parser = argparse.ArgumentParser(
         description="Create neopatient vector database for looking up medical codes"
@@ -34,7 +37,6 @@ async def _main():
         format="%(asctime)s - %(message)s",
         datefmt="%H:%M:%S",
     )
-    logger = logging.getLogger(__name__)
 
     embedder = create_embedder(
         args.embedder,

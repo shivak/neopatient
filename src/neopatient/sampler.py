@@ -16,6 +16,9 @@ from .models import (
 )
 from .batch_llm import BatchLLM
 
+
+logger = logging.getLogger(__name__)
+
 # Get the directory of the current file to construct template path
 _current_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(os.path.dirname(_current_dir))
@@ -64,7 +67,6 @@ async def sample_recipes(
     Returns:
         List of PatientRecipe objects
     """
-    logger = logging.getLogger(__name__)
 
     csv_path = _get_csv_path(record_type)
     stats = sample_patient_stats(csv_path, n)
@@ -107,7 +109,6 @@ async def _handle_sampling_stage(
     embedder,
 ) -> list[Cohort] | State:
     """Sample individual patient recipes for each cohort using batch processing."""
-    logger = logging.getLogger(__name__)
     # Create batch sampling requests for all cohorts
     prompts_by_id = {}
     cohort_info = []  # Track (cohort_idx, expected_count) for validation

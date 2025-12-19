@@ -9,6 +9,9 @@ from openai import AsyncOpenAI
 from .models import Patient, VerificationResponse, State, CohortSpec, Cohort, Stage
 from .batch_llm import BatchLLM
 
+
+logger = logging.getLogger(__name__)
+
 # Get the directory of the current file to construct template path
 _current_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(os.path.dirname(_current_dir))
@@ -51,7 +54,6 @@ async def verify_patient(
     Returns:
         VerificationResponse
     """
-    logger = logging.getLogger(__name__)
 
     # Verify the record satisfies positive and negative descriptions
     ver_prompt = create_verification_prompt(record, positive, negative)
@@ -89,7 +91,6 @@ async def _start_verification_stage(
     cohort_specs: list[CohortSpec],
 ) -> list[Cohort] | State:
     """Start verification stage using batch API."""
-    logger = logging.getLogger(__name__)
     # Prepare verification requests
     prompts_by_id = {}
 

@@ -36,6 +36,9 @@ from .verifier import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 def _synthesis_setup(
     chroma_db: ClientAPI | pathlib.Path | None,
     embedder_model: str | None,
@@ -147,8 +150,6 @@ async def _synthesize_cohorts(
     verifier: BatchLLM,
     state: State | None = None,
 ) -> list[Cohort] | State:
-    logger = logging.getLogger(__name__)
-
     # If resuming from state, use existing state
     if state is not None:
         current_state = state

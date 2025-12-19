@@ -18,6 +18,9 @@ from .cli_common import (
 from .llm import apply_rate_limiting
 
 
+logger = logging.getLogger(__name__)
+
+
 async def _main():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", help="Subcommands")
@@ -56,7 +59,6 @@ async def _main():
         format="%(asctime)s - %(message)s",
         datefmt="%H:%M:%S",
     )
-    logger = logging.getLogger(__name__)
 
     # Set ChromaDB parameter
     chroma_db = pathlib.Path(args.db_dir) if args.db_dir else None
