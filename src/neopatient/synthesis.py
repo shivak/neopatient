@@ -150,6 +150,10 @@ async def _synthesize_cohorts(
     verifier: BatchLLM,
     state: State | None = None,
 ) -> list[Cohort] | State:
+    # Round up cohort sizes to at least 3 to avoid generating null cohorts
+    # due to individual failure probabilities
+    for spec in cohort_specs:
+        spec.count = max(spec.count, 3)
     # If resuming from state, use existing state
     if state is not None:
         current_state = state
