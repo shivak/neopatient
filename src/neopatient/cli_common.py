@@ -24,6 +24,10 @@ def add_embedder_args(parser):
         help="Base URL for OpenAI-compatible API (uses OpenAI embedder if provided)",
     )
     parser.add_argument(
+        "--embedder-api-key",
+        help="API key for OpenAI embedder",
+    )
+    parser.add_argument(
         "--embedder-args",
         type=json.loads,
         help="JSON dict for embedder configuration",

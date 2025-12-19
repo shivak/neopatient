@@ -41,6 +41,7 @@ async def _main():
         args.embedder_batch_size,
         args.embedder_args,
         args.embedder_base_url,
+        args.embedder_api_key,
     )
     logger.info(f"Using embedder: {args.embedder}")
 

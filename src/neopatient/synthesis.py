@@ -42,6 +42,7 @@ def _synthesis_setup(
     embedder_batch_size: int | None,
     embedder_args: dict | None,
     embedder_base_url: str | None,
+    embedder_api_key: str | None,
     sampler: str,
     generator: str,
     verifier: str,
@@ -50,7 +51,11 @@ def _synthesis_setup(
     """Set up shared dependencies for synthesis functions."""
     chroma_db = resolve_chroma_client(chroma_db)
     embedder = create_embedder(
-        embedder_model, embedder_batch_size, embedder_args, embedder_base_url
+        embedder_model,
+        embedder_batch_size,
+        embedder_args,
+        embedder_base_url,
+        embedder_api_key,
     )
     sampler_llm = create_batch_llm(sampler, poll_interval)
     generator_llm = create_batch_llm(generator, poll_interval)
@@ -68,6 +73,7 @@ async def synthesize_patient(
     embedder_batch_size: int | None,
     embedder_args: dict | None,
     embedder_base_url: str | None = None,
+    embedder_api_key: str | None = None,
     seed: int | None = None,
     generator: str = "gpt-5",
     verifier: str = "gpt-5",
@@ -105,7 +111,11 @@ async def synthesize_patient(
     """
     chroma_client = resolve_chroma_client(chroma_db)
     embedder = create_embedder(
-        embedder_model, embedder_batch_size, embedder_args, embedder_base_url
+        embedder_model,
+        embedder_batch_size,
+        embedder_args,
+        embedder_base_url,
+        embedder_api_key,
     )
 
     # Sample recipe
@@ -208,6 +218,7 @@ async def synthesize_cohorts(
     embedder_batch_size: int | None,
     embedder_args: dict | None,
     embedder_base_url: str | None = None,
+    embedder_api_key: str | None = None,
     state: State | None = None,
     generator: str = "gpt-5",
     verifier: str = "gpt-5-nano",
@@ -249,6 +260,7 @@ async def synthesize_cohorts(
         embedder_batch_size,
         embedder_args,
         embedder_base_url,
+        embedder_api_key,
         sampler,
         generator,
         verifier,
@@ -274,6 +286,7 @@ async def synthesize_cohorts_with_state_file(
     embedder_args: dict | None,
     state_file: pathlib.Path,
     embedder_base_url: str | None = None,
+    embedder_api_key: str | None = None,
     generator: str = "gpt-5-nano",
     verifier: str = "gpt-5",
     sampler: str = "gpt-5",
@@ -303,6 +316,7 @@ async def synthesize_cohorts_with_state_file(
         embedder_batch_size,
         embedder_args,
         embedder_base_url,
+        embedder_api_key,
         sampler,
         generator,
         verifier,

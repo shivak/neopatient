@@ -36,7 +36,11 @@ def sentence_embedder(model_name: str, batch_size: int, **kwargs) -> Embed:
 
 
 def openai_embedder(
-    model_name: str, batch_size: int, embedder_base_url: str | None = None, **kwargs
+    model_name: str,
+    batch_size: int,
+    embedder_base_url: str | None = None,
+    api_key: str | None = None,
+    **kwargs,
 ) -> Embed:
     """Create an OpenAI embedder.
 
@@ -44,12 +48,13 @@ def openai_embedder(
         model_name: OpenAI model name
         batch_size: Batch size for API calls (default: 100)
         embedder_base_url: Base URL for OpenAI-compatible API (optional)
+        api_key: API key for OpenAI embedder
         **kwargs: Additional arguments passed to embeddings.create() call
 
     Returns:
         Async embedder function that yields batches of embeddings
     """
-    client = AsyncOpenAI(base_url=embedder_base_url, max_retries=0)
+    client = AsyncOpenAI(base_url=embedder_base_url, api_key=api_key, max_retries=0)
 
     async def embed(texts: list[str]) -> AsyncGenerator[list[list[float]], None]:
         # Truncate texts to 256 characters
@@ -75,6 +80,7 @@ def create_embedder(
     embedder_batch_size: int | None = None,
     embedder_args: dict | None = None,
     embedder_base_url: str | None = None,
+    embedder_api_key: str | None = None,
 ) -> Embed:
     """Create an embedder from model name and args dict.
 
@@ -83,6 +89,7 @@ def create_embedder(
         embedder_batch_size: Batch size for embedding operations (default: 128)
         embedder_args: Dictionary of embedder arguments (default: {})
         embedder_base_url: Base URL for OpenAI-compatible API (uses OpenAI embedder if provided)
+        embedder_api_key: API key for OpenAI embedder
 
     Returns:
         Embedder function
@@ -101,6 +108,7 @@ def create_embedder(
             embedder_model,
             batch_size=embedder_batch_size,
             embedder_base_url=embedder_base_url,
+            api_key=embedder_api_key,
             **embedder_args,
         )
     else:
