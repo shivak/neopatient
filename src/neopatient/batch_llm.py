@@ -230,8 +230,8 @@ class BatchGemini(BatchLLM):
                     if candidate["finishReason"] == "STOP":
                         content = candidate["content"]["parts"][0]["text"]
                     else:
-                        logger.warning(f"Encountered bad stop reason: {line}")
-                        content = {}
+                        logger.warning(f"Encountered bad finish reason")
+                        content = line
                     response_data[custom_id] = content
 
         logger.info(
