@@ -226,9 +226,12 @@ class BatchGemini(BatchLLM):
                 if line.strip():
                     result = json.loads(line)
                     custom_id = result["key"]
-                    content = result["response"]["candidates"][0]["content"]["parts"][
-                        0
-                    ]["text"]
+                    candidate = result["response"]["candidates"][0] 
+                    if candidate["finishReason"] == "STOP":
+                        content = candidate["content"]["parts"][0]["text"]
+                    else:
+                        logger.warning(f"Encountered bad stop reason: {line}")
+                        content = {}
                     response_data[custom_id] = content
 
         logger.info(
