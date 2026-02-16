@@ -1,6 +1,4 @@
-# neopatient: language-controlled generation of artificial patient records.
-
-neopatient generates useful, realistic (but artificial), longitudinal patient records. Just write out (in natural language) what you do and do not want the patients to be like. neopatient handles steps like sampling, chunking, batching, structuring, and verification. It cost-effectively generates lots (tens of thousands) of records, each up to 100K+ tokens, in the [MEDS](https://medical-event-data-standard.github.io/) format.
+**neopatient** generates useful, realistic (but artificial), longitudinal patient records. Just write out (in natural language) what you do and do not want the patients to be like. neopatient handles steps like sampling, chunking, batching, structuring, and verification. It cost-effectively generates lots (tens of thousands) of records, each up to 100K+ tokens, in the [MEDS](https://medical-event-data-standard.github.io/) format.
 
 Unlike rule-based generators like [Synthea](https://github.com/synthetichealth/synthea), patient trajectories are language-controlled -- producing a new kind of cohort doesn't require writing simulation code or state machines, just a description.
 
