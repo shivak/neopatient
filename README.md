@@ -59,12 +59,12 @@ Then pass `--db_dir ./my_db` to `neopatient`.
 ### Citation
 ```bibtex
 @inproceedings{
-    kaul2026position,
-    title={Position: Medical {AI} Neglects Real Treatment Outcomes},
-    author={Shiva Kaul and Anjum Khurshid},
-    booktitle={Forty-third International Conference on Machine Learning Position Paper Track},
+    kaul2026verbose,
+    title={The Verbose Context Problem in Medical Records},
+    author={Shiva Kaul and Min-Gyu Kim and Anjum Khurshid and Sriram Vishwanath},
+    booktitle={ICML 2026 Workshop on Structured Data for Health},
     year={2026},
-    url={https://openreview.net/forum?id=0e1KEGU9RD}
+    url={https://openreview.net/forum?id=01QqB9Ugll}
 }
 ```
 
