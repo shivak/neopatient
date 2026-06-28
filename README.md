@@ -26,7 +26,7 @@ The output is a Parquet file in MEDS format. For large cohorts, neopatient uses 
 Generate a single patient:
 ```bash
 # make sure OPENAI_API_KEY is set
-neopatient single \
+uvx neopatient single \
   --positive "Adult patient with type 2 diabetes managed with metformin, with at least 5 years of follow-up" \
   --negative "Patient with type 1 diabetes or gestational diabetes" \
   --out patient.parquet
@@ -34,7 +34,7 @@ neopatient single \
 
 Generate a cohort of patients:
 ```bash
-neopatient cohort \
+uvx neopatient cohort \
   --positive "Adult patient with type 2 diabetes managed with metformin, with at least 5 years of follow-up" \
   --negative "Patient with type 1 diabetes or gestational diabetes" \
   --size 1000 \
@@ -50,6 +50,6 @@ Use `--record-type` to choose between `ehr-inpatient`, `ehr-outpatient` (default
 
 The matching stage relies on a precomputed vector database of medical codes. A default database (embedded with [Qwen3-Embedding-8B](https://huggingface.co/Qwen/Qwen3-Embedding-8B)) is downloaded automatically from Hugging Face on first use. To build your own from a parquet file of codes and descriptions:
 ```bash
-neopatient-db --parquet_path codes.parquet --db_dir ./my_db
+uvx --from neopatient neopatient-db --parquet_path codes.parquet --db_dir ./my_db
 ```
 Then pass `--db_dir ./my_db` to `neopatient`.
