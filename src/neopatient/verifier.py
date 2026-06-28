@@ -2,6 +2,7 @@ import logging
 import os
 import random
 import string
+from importlib.resources import files
 
 import jinja2
 from openai import AsyncOpenAI
@@ -12,13 +13,9 @@ from .batch_llm import BatchLLM
 
 logger = logging.getLogger(__name__)
 
-# Get the directory of the current file to construct template path
-_current_dir = os.path.dirname(os.path.abspath(__file__))
-_project_root = os.path.dirname(os.path.dirname(_current_dir))
-_verify_template_path = os.path.join(_project_root, "templates", "verify.jinja2")
-
+# Load template using package resources
 VERIFICATION_TEMPLATE = jinja2.Template(
-    open(_verify_template_path, "r", encoding="utf-8").read()
+    files("neopatient.templates").joinpath("verify.jinja2").read_text(encoding="utf-8")
 )
 
 

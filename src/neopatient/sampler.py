@@ -2,6 +2,8 @@ import logging
 import os
 import random
 from typing import Any
+from importlib.resources import files
+
 from openai import AsyncOpenAI
 import jinja2
 import pandas as pd
@@ -19,25 +21,22 @@ from .batch_llm import BatchLLM
 
 logger = logging.getLogger(__name__)
 
-# Get the directory of the current file to construct template path
-_current_dir = os.path.dirname(os.path.abspath(__file__))
-_project_root = os.path.dirname(os.path.dirname(_current_dir))
-_sample_template_path = os.path.join(_project_root, "templates", "sample.jinja2")
-
+# Load template using package resources
 SAMPLE_TEMPLATE = jinja2.Template(
-    open(_sample_template_path, "r", encoding="utf-8").read()
+    files("neopatient.templates").joinpath("sample.jinja2").read_text(encoding="utf-8")
 )
 
 
-def _get_csv_path(record_type: RecordType) -> str:
+def _get_csv_resource(record_type: RecordType) -> Any:
     if record_type == RecordType.EHR_INPATIENT:
-        return os.path.join(_project_root, "stats", "ehr-inpatient.csv")
+        return files("neopatient.stats").joinpath("ehr-inpatient.csv")
     else:
-        return os.path.join(_project_root, "stats", "ehr-outpatient.csv")
+        return files("neopatient.stats").joinpath("ehr-outpatient.csv")
 
 
-def sample_patient_stats(csv_path: str, n: int) -> list[dict[str, Any]]:
-    df = pd.read_csv(csv_path)
+def sample_patient_stats(csv_resource: Any, n: int) -> list[dict[str, Any]]:
+    with csv_resource.open("r", encoding="utf-8") as f:
+        df = pd.read_csv(f)
     sampled_df = df.sample(n=n, replace=True)
     return sampled_df.to_dict("records")
 
@@ -68,8 +67,8 @@ async def sample_recipes(
         List of PatientRecipe objects
     """
 
-    csv_path = _get_csv_path(record_type)
-    stats = sample_patient_stats(csv_path, n)
+    csv_resource = _get_csv_resource(record_type)
+    stats = sample_patient_stats(csv_resource, n)
 
     prompt = SAMPLE_TEMPLATE.render(
         positive_cohort=positive, negative_cohort=negative, n=n, stats=stats
@@ -114,8 +113,8 @@ async def _handle_sampling_stage(
     cohort_info = []  # Track (cohort_idx, expected_count) for validation
 
     for cohort_idx, spec in enumerate(cohort_specs):
-        csv_path = _get_csv_path(spec.record_type)
-        stats = sample_patient_stats(csv_path, spec.count)
+        csv_resource = _get_csv_resource(spec.record_type)
+        stats = sample_patient_stats(csv_resource, spec.count)
 
         prompt = SAMPLE_TEMPLATE.render(
             positive_cohort=spec.positive,

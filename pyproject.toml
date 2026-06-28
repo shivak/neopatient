@@ -29,6 +29,9 @@ license = { text = "Apache-2.0" }
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.package-data]
+neopatient = ["templates/*.jinja2", "stats/*.csv"]
+
 [project.scripts]
 neopatient = "neopatient.cli:main"
 neopatient-db = "neopatient.cli_db:main"

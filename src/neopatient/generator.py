@@ -1,6 +1,7 @@
 import logging
 import os
 from datetime import datetime
+from importlib.resources import files
 
 from openai import AsyncOpenAI
 import jinja2
@@ -23,13 +24,9 @@ from .batch_llm import BatchLLM
 logger = logging.getLogger(__name__)
 
 
-# Get the directory of the current file to construct template path
-_current_dir = os.path.dirname(os.path.abspath(__file__))
-_project_root = os.path.dirname(os.path.dirname(_current_dir))
-_generate_template_path = os.path.join(_project_root, "templates", "generate.jinja2")
-
+# Load template using package resources
 GENERATION_TEMPLATE = jinja2.Template(
-    open(_generate_template_path, "r", encoding="utf-8").read()
+    files("neopatient.templates").joinpath("generate.jinja2").read_text(encoding="utf-8")
 )
 
 
