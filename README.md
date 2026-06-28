@@ -4,6 +4,8 @@
   <img src="docs/neopatient.png" alt="neopatient generation pipeline" />
 </p>
 
+[*SD4H ICML 2026 Spotlight*](https://openreview.net/forum?id=01QqB9Ugll)
+
 ***
 
 neopatient generates useful, realistic (but artificial), longitudinal patient records. Just write out (in natural language) what you do and do not want the patients to be like. neopatient handles steps like sampling, chunking, batching, structuring, and verification. It cost-effectively generates lots (tens of thousands) of records, each up to 100K+ tokens, in the [MEDS](https://medical-event-data-standard.github.io/) format.
@@ -53,3 +55,17 @@ The matching stage relies on a precomputed vector database of medical codes. A d
 uvx --from neopatient neopatient-db --parquet_path codes.parquet --db_dir ./my_db
 ```
 Then pass `--db_dir ./my_db` to `neopatient`.
+
+### Citation
+```bibtex
+@inproceedings{
+    kaul2026position,
+    title={Position: Medical {AI} Neglects Real Treatment Outcomes},
+    author={Shiva Kaul and Anjum Khurshid},
+    booktitle={Forty-third International Conference on Machine Learning Position Paper Track},
+    year={2026},
+    url={https://openreview.net/forum?id=0e1KEGU9RD}
+}
+```
+
+
