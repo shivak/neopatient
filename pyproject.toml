@@ -3,7 +3,7 @@ name = "neopatient"
 version = "0.1.0"
 description = "Language-controlled generation of artificial patient records"
 authors = [
-    { name = "Shiva Kaul", email = "shiva.kaul@gmail.com" }
+    { name = "Shiva Kaul", email = "pypi@shivakaul.com" }
 ]
 dependencies = [
     "duckdb>=0.10.0",
