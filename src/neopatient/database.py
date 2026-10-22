@@ -98,11 +98,27 @@ def resolve_chroma_client(
     """Resolve chroma_db parameter to a ChromaDB client."""
 
     if chroma_db is None:
-        # Download pre-generated ChromaDB files from Hugging Face
+        # Download pre-generated ChromaDB files from Hugging Face into a dedicated
+        # local_dir rather than the default HF hub cache. By default, snapshot_download
+        # returns a snapshot directory containing symlinks into ~/.cache/huggingface/hub/blobs/,
+        # where files are marked read-only (0444) to protect the content-addressed cache.
+        # However, ChromaDB's Rust SQLite backend unconditionally executes write statements
+        # on startup (CREATE TABLE IF NOT EXISTS migrations, INSERT OR REPLACE INTO
+        # embeddings_queue_config, and schema migrations across ChromaDB versions), which
+        # fails with "SQLITE_READONLY (code: 8): attempt to write a readonly database" if
+        # pointed at read-only HF cache blobs. Passing local_dir materializes real writable
+        # files outside the immutable blob store.
+        default_local_dir = (
+            pathlib.Path.home()
+            / ".cache"
+            / "neopatient"
+            / "CAB-Harvard--neopatient-Qwen3-Embedding-8B"
+        )
         chroma_path = snapshot_download(
             "CAB-Harvard/neopatient-Qwen3-Embedding-8B",
             repo_type="dataset",
             revision="3eca3e5c188cd5a4ea54811a9271798262f2b101",
+            local_dir=default_local_dir,
         )
         return load_chroma_client(chroma_path)
     elif isinstance(chroma_db, pathlib.Path):
