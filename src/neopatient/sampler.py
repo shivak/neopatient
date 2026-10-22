@@ -171,12 +171,14 @@ async def _handle_check_sampling_stage(
 
         sampling_response = SamplingResponse.model_validate_json(content)
 
-        # Validate we got the expected number of recipes
+        # Warn and trim sampled_ids if we got fewer recipes than expected
         expected_count = cohort_specs[cohort_idx].count
-        if len(sampling_response.root) < expected_count:
-            raise ValueError(
-                f"Cohort {cohort_idx}: Expected {expected_count} samples, got {len(sampling_response.root)}"
+        actual_count = len(sampling_response.root)
+        if actual_count < expected_count:
+            logger.warning(
+                f"Cohort {cohort_idx}: Expected {expected_count} samples, got {actual_count}"
             )
+            state.sampled_ids[cohort_idx] = state.sampled_ids[cohort_idx][:actual_count]
 
         cohort_ids = state.sampled_ids[cohort_idx]
         cohort_recipes = dict(zip(cohort_ids, sampling_response.root))
