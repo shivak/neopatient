@@ -108,19 +108,24 @@ def resolve_chroma_client(
         # fails with "SQLITE_READONLY (code: 8): attempt to write a readonly database" if
         # pointed at read-only HF cache blobs. Passing local_dir materializes real writable
         # files outside the immutable blob store.
+        # We only call snapshot_download if chroma.sqlite3 does not yet exist locally,
+        # because ChromaDB modifies chroma.sqlite3 on startup (updating its mtime and
+        # sha256), which would otherwise cause snapshot_download(local_dir=...) to think
+        # chroma.sqlite3 is outdated and re-download the 1.92 GB unmigrated file every run.
         default_local_dir = (
             pathlib.Path.home()
             / ".cache"
             / "neopatient"
             / "CAB-Harvard--neopatient-Qwen3-Embedding-8B"
         )
-        chroma_path = snapshot_download(
-            "CAB-Harvard/neopatient-Qwen3-Embedding-8B",
-            repo_type="dataset",
-            revision="3eca3e5c188cd5a4ea54811a9271798262f2b101",
-            local_dir=default_local_dir,
-        )
-        return load_chroma_client(chroma_path)
+        if not (default_local_dir / "chroma.sqlite3").exists():
+            snapshot_download(
+                "CAB-Harvard/neopatient-Qwen3-Embedding-8B",
+                repo_type="dataset",
+                revision="3eca3e5c188cd5a4ea54811a9271798262f2b101",
+                local_dir=default_local_dir,
+            )
+        return load_chroma_client(str(default_local_dir))
     elif isinstance(chroma_db, pathlib.Path):
         return load_chroma_client(str(chroma_db))
     elif isinstance(chroma_db, ClientAPI):
